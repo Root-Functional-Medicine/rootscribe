@@ -1,6 +1,6 @@
 # Applaud
 
-A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recordings to disk and fires webhooks when new recordings or transcripts arrive. Runs on your machine, uses your existing Plaud browser session for auth, and ships with a React web UI for setup and browsing.
+A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recordings to disk and fires webhooks when new recordings or transcripts arrive, so you can easily hook it up to n8n (or any other custom integration). Runs on your machine, uses your existing Plaud browser session for auth, and ships with a web UI for setup and browsing.
 
 > Applaud is not affiliated with Plaud. It talks to the same undocumented web API that the Plaud web app uses, via your own logged-in session.
 
@@ -109,7 +109,7 @@ Each recording gets its own folder under your chosen recordings directory:
 
 The `n8n/` folder contains importable n8n workflow templates. To use one, open n8n, create a new workflow, then **Import from File** and select the JSON file. See [`n8n/README.md`](n8n/README.md) for setup details.
 
-![Settings](assets/Screenshot%202026-04-11%20204552.png)
+![Settings](assets/Screenshot%202026-04-11%20204912.png)
 
 ## Running in the background
 
