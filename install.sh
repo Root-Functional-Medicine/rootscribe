@@ -95,6 +95,12 @@ ensure_node() {
     fail "node is still not on PATH after pnpm env install. Open a new terminal and re-run."
   fi
   say "node $(node --version) installed"
+  # node-gyp is needed to compile native modules (e.g. better-sqlite3)
+  # when no prebuilt binary is available for this Node version.
+  if ! have node-gyp; then
+    say "installing node-gyp"
+    pnpm add -g node-gyp
+  fi
 }
 
 clone_repo() {
