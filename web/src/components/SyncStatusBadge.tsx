@@ -37,23 +37,23 @@ export function SyncStatusBadge(): JSX.Element {
   }, [qc]);
 
   const s = status.data;
-  if (!s) return <span className="pill bg-ink-100 text-ink-500">loading</span>;
+  if (!s) return <span className="pill bg-surface-container text-on-surface-variant">loading</span>;
   if (s.authRequired) {
-    return <span className="pill bg-red-100 text-red-700">auth required</span>;
+    return <span className="pill bg-error/15 text-error">auth required</span>;
   }
   if (s.polling) {
     return (
-      <span className="pill bg-accent-soft text-accent">
-        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+      <span className="pill border border-primary/40 bg-primary/15 text-primary">
+        <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
         syncing
       </span>
     );
   }
   if (s.lastError) {
-    return <span className="pill bg-red-100 text-red-700">error</span>;
+    return <span className="pill bg-error/15 text-error">error</span>;
   }
   return (
-    <span className="pill bg-ink-100 text-ink-600">
+    <span className="pill border border-outline-variant/40 bg-surface-container-low text-on-surface-variant">
       synced {formatRelative(s.lastPollAt)}
     </span>
   );

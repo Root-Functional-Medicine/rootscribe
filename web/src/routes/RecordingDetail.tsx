@@ -1,5 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef } from "react";
 import { api } from "../api.js";
 
 function formatDuration(ms: number): string {
@@ -20,6 +21,7 @@ export function RecordingDetailPage(): JSX.Element {
   const params = useParams<{ id: string }>();
   const navigate = useNavigate();
   const qc = useQueryClient();
+  const audioRef = useRef<HTMLAudioElement>(null);
   const id = params.id ?? "";
   const q = useQuery({
     queryKey: ["recording", id],
@@ -27,11 +29,11 @@ export function RecordingDetailPage(): JSX.Element {
     enabled: !!id,
   });
 
-  if (q.isLoading) return <p className="text-ink-500">loading…</p>;
+  if (q.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   if (q.error || !q.data)
     return (
       <div>
-        <p className="text-red-600">Not found.</p>
+        <p className="text-error">Not found.</p>
         <Link to="/" className="btn-ghost mt-3 inline-flex">
           ← Back
         </Link>
@@ -47,22 +49,29 @@ export function RecordingDetailPage(): JSX.Element {
     navigate("/");
   };
 
+  const skipBack = (): void => {
+    if (audioRef.current) audioRef.current.currentTime -= 10;
+  };
+  const skipForward = (): void => {
+    if (audioRef.current) audioRef.current.currentTime += 30;
+  };
+
   return (
     <div>
       <div className="mb-6 flex items-start justify-between gap-6">
         <div className="min-w-0">
-          <Link to="/" className="text-sm text-ink-500 hover:text-ink-700">
+          <Link to="/" className="text-sm text-on-surface-variant hover:text-on-surface transition-colors">
             ← Recordings
           </Link>
-          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-ink-900">
+          <h1 className="mt-1 truncate text-2xl font-semibold tracking-tight text-on-surface">
             {r.filename}
           </h1>
-          <div className="mt-1 text-sm text-ink-500">
+          <div className="mt-1 text-sm text-on-surface-variant font-label">
             {formatDate(r.startTime)} · {formatDuration(r.durationMs)} ·{" "}
             {(r.filesizeBytes / 1024 / 1024).toFixed(1)} MB
           </div>
         </div>
-        <button className="btn-secondary" onClick={() => void del()}>
+        <button className="btn-secondary text-error border-error/20 hover:border-error/50" onClick={() => void del()}>
           Delete local copy
         </button>
       </div>
@@ -71,17 +80,44 @@ export function RecordingDetailPage(): JSX.Element {
         <div className="space-y-6">
           {r.audioDownloadedAt && (
             <div className="card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-on-surface-variant font-label">
                 Audio
               </h2>
               <audio
+                ref={audioRef}
                 src={`${mediaBase}/audio.ogg`}
                 controls
                 className="w-full"
                 preload="metadata"
               />
-              <div className="mt-2 text-xs text-ink-500">
-                <a href={`${mediaBase}/audio.ogg`} className="underline" download>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  onClick={skipBack}
+                  className="btn-ghost text-xs gap-1"
+                  title="Skip back 10 seconds"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M11 17l-5-5 5-5" />
+                    <path d="M18 17l-5-5 5-5" />
+                  </svg>
+                  10s
+                </button>
+                <button
+                  onClick={skipForward}
+                  className="btn-ghost text-xs gap-1"
+                  title="Skip forward 30 seconds"
+                >
+                  30s
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M13 17l5-5-5-5" />
+                    <path d="M6 17l5-5-5-5" />
+                  </svg>
+                </button>
+                <a
+                  href={`${mediaBase}/audio.ogg`}
+                  className="btn-ghost text-xs ml-auto"
+                  download
+                >
                   Download .ogg
                 </a>
               </div>
@@ -90,19 +126,19 @@ export function RecordingDetailPage(): JSX.Element {
 
           {r.transcriptText ? (
             <div className="card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-on-surface-variant font-label">
                 Transcript
               </h2>
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-ink-800">
+              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-on-surface">
                 {r.transcriptText}
               </pre>
             </div>
           ) : r.audioDownloadedAt ? (
             <div className="card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-on-surface-variant font-label">
                 Transcript
               </h2>
-              <p className="text-sm text-ink-500">
+              <p className="text-sm text-on-surface-variant">
                 Transcript is still pending on Plaud's side. We'll pull it on the next
                 sync cycle.
               </p>
@@ -113,16 +149,16 @@ export function RecordingDetailPage(): JSX.Element {
         <aside className="space-y-6">
           {r.summaryMarkdown && (
             <div className="card p-5">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-on-surface-variant font-label">
                 Summary
               </h2>
-              <div className="prose prose-sm prose-ink max-w-none whitespace-pre-wrap text-sm text-ink-800">
+              <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm text-on-surface">
                 {r.summaryMarkdown}
               </div>
             </div>
           )}
           <div className="card p-5 text-sm">
-            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-ink-500">
+            <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-on-surface-variant font-label">
               Details
             </h2>
             <dl className="space-y-2">
@@ -161,8 +197,8 @@ function Meta({
 }): JSX.Element {
   return (
     <div>
-      <dt className="text-xs uppercase tracking-wide text-ink-400">{label}</dt>
-      <dd className={`mt-0.5 break-all text-ink-800 ${mono ? "font-mono text-xs" : ""}`}>
+      <dt className="text-xs uppercase tracking-wide text-on-surface-variant font-label">{label}</dt>
+      <dd className={`mt-0.5 break-all text-on-surface ${mono ? "font-mono text-xs" : ""}`}>
         {value}
       </dd>
     </div>

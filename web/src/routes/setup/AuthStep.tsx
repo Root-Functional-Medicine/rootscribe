@@ -124,18 +124,18 @@ export function AuthStep({
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-ink-900">Connect your Plaud account</h2>
-      <p className="mt-2 text-ink-600">
-        applaud authenticates by reading your existing Plaud session from Chrome.
+      <h2 className="text-2xl font-semibold text-on-surface">Connect your Plaud account</h2>
+      <p className="mt-2 text-on-surface-variant">
+        Applaud authenticates by reading your existing Plaud session from Chrome.
       </p>
 
-      <div className="mt-6 rounded-md border border-ink-200 bg-ink-50 p-4">
+      <div className="mt-6 rounded-lg border border-outline-variant/30 bg-surface-container-low p-4">
         {detect.kind === "detecting" && (
-          <p className="text-sm text-ink-600">Scanning browsers on this machine…</p>
+          <p className="text-sm text-on-surface-variant">Scanning browsers on this machine…</p>
         )}
         {detect.kind === "found" && (
           <div>
-            <p className="text-sm text-ink-900">
+            <p className="text-sm text-on-surface">
               ✓ Found a Plaud session in{" "}
               <span className="font-medium">
                 {detect.browser} / {detect.profile}
@@ -166,7 +166,7 @@ export function AuthStep({
         )}
         {detect.kind === "notfound" && (
           <div className="space-y-4">
-            <p className="text-sm text-ink-600">
+            <p className="text-sm text-on-surface-variant">
               No existing Plaud session found. Open the Plaud web app in your browser, log
               in, and we'll pick up the session automatically.
             </p>
@@ -178,19 +178,19 @@ export function AuthStep({
               </div>
             )}
             {watch.kind === "waiting" && (
-              <p className="text-sm text-ink-600">
+              <p className="text-sm text-on-surface-variant">
                 Waiting for you to log in… ({watch.elapsedSec}s)
               </p>
             )}
             {watch.kind === "error" && (
-              <p className="text-sm text-red-600">{watch.message}</p>
+              <p className="text-sm text-error">{watch.message}</p>
             )}
-            <details className="rounded border border-ink-200 bg-white p-3 text-sm">
-              <summary className="cursor-pointer font-medium text-ink-700">
+            <details className="rounded-lg border border-outline-variant/30 bg-surface-container p-3 text-sm">
+              <summary className="cursor-pointer font-medium text-on-surface">
                 Paste a token manually
               </summary>
               <div className="mt-3 space-y-2">
-                <p className="text-xs text-ink-500">
+                <p className="text-xs text-on-surface-variant">
                   Open web.plaud.ai DevTools → Application → Local Storage → paste the
                   value of <code>tokenstr</code> (starts with <code>bearer eyJ…</code>) or
                   the raw JWT.
@@ -210,7 +210,7 @@ export function AuthStep({
                     {manual.kind === "validating" ? "Validating…" : "Use this token"}
                   </button>
                   {manual.kind === "error" && (
-                    <span className="text-sm text-red-600">{manual.message}</span>
+                    <span className="text-sm text-error">{manual.message}</span>
                   )}
                 </div>
               </div>
@@ -219,7 +219,7 @@ export function AuthStep({
         )}
         {detect.kind === "error" && (
           <div>
-            <p className="text-sm text-red-600">Detect failed: {detect.message}</p>
+            <p className="text-sm text-error">Detect failed: {detect.message}</p>
             <button
               className="btn-secondary mt-2"
               onClick={() => setDetect({ kind: "notfound" })}

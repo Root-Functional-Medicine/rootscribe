@@ -33,12 +33,12 @@ export function SetupWizard(): JSX.Element {
   };
 
   return (
-    <div className="min-h-screen bg-ink-50">
+    <div className="min-h-screen bg-surface">
       <div className="mx-auto max-w-2xl px-6 py-12">
         <div className="mb-10 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-semibold tracking-tight">
-            <span className="inline-block h-2 w-2 rounded-full bg-accent" />
-            applaud setup
+          <div className="flex items-center gap-1.5 font-semibold tracking-tight text-on-surface">
+            Applaud
+            <span className="inline-block h-2 w-2 rounded-full bg-primary" />
           </div>
           <StepIndicator currentIndex={idx} />
         </div>
@@ -61,7 +61,7 @@ function StepIndicator({ currentIndex }: { currentIndex: number }): JSX.Element 
         <div
           key={i}
           className={`h-1.5 w-8 rounded-full ${
-            i <= currentIndex ? "bg-accent" : "bg-ink-200"
+            i <= currentIndex ? "bg-primary" : "bg-surface-container-highest"
           }`}
         />
       ))}

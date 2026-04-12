@@ -47,6 +47,7 @@ export interface RecordingsListQuery {
 
 export interface RecordingsListResponse {
   total: number;
+  totalBytes: number;
   items: RecordingRow[];
 }
 

@@ -1,7 +1,11 @@
+import { renameSync, existsSync } from "node:fs";
+import path from "node:path";
 import type { RecordingRow, PlaudRawRecording } from "@applaud/shared";
 import { getDb, rowToRecording, type RecordingDbRow } from "../db.js";
 import { folderName, recordingPaths } from "./layout.js";
 import { loadConfig } from "../config.js";
+import { logger } from "../logger.js";
+import { emit } from "./events.js";
 
 export interface UpsertOptions {
   isHistorical?: boolean;
@@ -12,7 +16,18 @@ export function upsertFromPlaud(item: PlaudRawRecording, opts: UpsertOptions = {
   const existing = db
     .prepare<[string], RecordingDbRow>("SELECT * FROM recordings WHERE id = ?")
     .get(item.id);
-  if (existing) return rowToRecording(existing);
+  if (existing) {
+    if (existing.filename !== item.filename) {
+      renameRecordingFolder(existing, item.filename);
+    }
+    const trashVal = item.is_trash ? 1 : 0;
+    if (existing.is_trash !== trashVal) {
+      db.prepare("UPDATE recordings SET is_trash = ? WHERE id = ?").run(trashVal, item.id);
+    }
+    return rowToRecording(
+      db.prepare<[string], RecordingDbRow>("SELECT * FROM recordings WHERE id = ?").get(item.id)!,
+    );
+  }
 
   const cfg = loadConfig();
   if (!cfg.recordingsDir) throw new Error("recordingsDir not configured");
@@ -24,8 +39,8 @@ export function upsertFromPlaud(item: PlaudRawRecording, opts: UpsertOptions = {
       id, filename, start_time, end_time, duration_ms, filesize_bytes, serial_number,
       folder, audio_path, transcript_path, summary_path, metadata_path,
       audio_downloaded_at, transcript_downloaded_at, webhook_audio_fired_at,
-      webhook_transcript_fired_at, is_historical, last_error, metadata_json
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, NULL, NULL)`,
+      webhook_transcript_fired_at, is_trash, is_historical, last_error, metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL)`,
   ).run(
     item.id,
     item.filename,
@@ -39,6 +54,7 @@ export function upsertFromPlaud(item: PlaudRawRecording, opts: UpsertOptions = {
     paths.transcriptJsonPath,
     paths.summaryMdPath,
     paths.metadataPath,
+    item.is_trash ? 1 : 0,
     opts.isHistorical ? 1 : 0,
   );
 
@@ -47,6 +63,44 @@ export function upsertFromPlaud(item: PlaudRawRecording, opts: UpsertOptions = {
       .prepare<[string], RecordingDbRow>("SELECT * FROM recordings WHERE id = ?")
       .get(item.id)!,
   );
+}
+
+function renameRecordingFolder(row: RecordingDbRow, newFilename: string): void {
+  const cfg = loadConfig();
+  if (!cfg.recordingsDir) return;
+
+  const newFolder = folderName(row.start_time, newFilename, row.id);
+  if (newFolder === row.folder) {
+    getDb().prepare("UPDATE recordings SET filename = ? WHERE id = ?").run(newFilename, row.id);
+    emit("recording_renamed", { recordingId: row.id });
+    return;
+  }
+
+  const oldAbs = path.join(cfg.recordingsDir, row.folder);
+  const newAbs = path.join(cfg.recordingsDir, newFolder);
+
+  if (existsSync(oldAbs)) {
+    renameSync(oldAbs, newAbs);
+    logger.info({ id: row.id, oldFolder: row.folder, newFolder }, "renamed recording folder");
+  }
+
+  const newPaths = recordingPaths(cfg.recordingsDir, newFolder);
+  getDb()
+    .prepare(
+      `UPDATE recordings
+         SET filename = ?, folder = ?, audio_path = ?, transcript_path = ?, summary_path = ?, metadata_path = ?
+       WHERE id = ?`,
+    )
+    .run(
+      newFilename,
+      newFolder,
+      newPaths.audioPath,
+      newPaths.transcriptJsonPath,
+      newPaths.summaryMdPath,
+      newPaths.metadataPath,
+      row.id,
+    );
+  emit("recording_renamed", { recordingId: row.id });
 }
 
 export function markAudioDownloaded(id: string, sizeBytes: number): void {
@@ -84,19 +138,19 @@ export function clearError(id: string): void {
 
 export function listRecordingRows(
   opts: { limit?: number; offset?: number; search?: string } = {},
-): { total: number; items: RecordingRow[] } {
+): { total: number; totalBytes: number; items: RecordingRow[] } {
   const db = getDb();
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const search = opts.search?.trim();
 
-  let totalRow: { c: number } | undefined;
+  let aggRow: { c: number; b: number } | undefined;
   let rows: RecordingDbRow[];
   if (search) {
     const like = `%${search}%`;
-    totalRow = db
-      .prepare<[string], { c: number }>(
-        "SELECT COUNT(*) AS c FROM recordings WHERE filename LIKE ?",
+    aggRow = db
+      .prepare<[string], { c: number; b: number }>(
+        "SELECT COUNT(*) AS c, COALESCE(SUM(filesize_bytes), 0) AS b FROM recordings WHERE filename LIKE ?",
       )
       .get(like);
     rows = db
@@ -105,7 +159,7 @@ export function listRecordingRows(
       )
       .all(like, limit, offset);
   } else {
-    totalRow = db.prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM recordings").get();
+    aggRow = db.prepare<[], { c: number; b: number }>("SELECT COUNT(*) AS c, COALESCE(SUM(filesize_bytes), 0) AS b FROM recordings").get();
     rows = db
       .prepare<[number, number], RecordingDbRow>(
         "SELECT * FROM recordings ORDER BY start_time DESC LIMIT ? OFFSET ?",
@@ -113,7 +167,8 @@ export function listRecordingRows(
       .all(limit, offset);
   }
   return {
-    total: totalRow?.c ?? 0,
+    total: aggRow?.c ?? 0,
+    totalBytes: aggRow?.b ?? 0,
     items: rows.map(rowToRecording),
   };
 }

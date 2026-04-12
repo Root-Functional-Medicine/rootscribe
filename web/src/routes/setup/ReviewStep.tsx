@@ -10,19 +10,19 @@ export function ReviewStep({
 }): JSX.Element {
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
 
-  if (cfg.isLoading) return <p>loading…</p>;
+  if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   const c = cfg.data?.config;
   if (!c) return <p>failed to load</p>;
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-ink-900">Review</h2>
-      <p className="mt-2 text-ink-600">
+      <h2 className="text-2xl font-semibold text-on-surface">Review</h2>
+      <p className="mt-2 text-on-surface-variant">
         Confirm these settings, then we'll start syncing.
       </p>
-      <dl className="mt-6 divide-y divide-ink-200 rounded-md border border-ink-200 bg-white">
+      <dl className="mt-6 divide-y divide-outline-variant/30 rounded-xl border border-outline-variant/30 bg-surface-container">
         <Row label="Plaud account">
-          {c.tokenEmail ?? <span className="text-ink-400">unknown</span>}
+          {c.tokenEmail ?? <span className="text-on-surface-variant">unknown</span>}
         </Row>
         <Row label="Recordings folder">
           <code className="text-xs">{c.recordingsDir ?? "(not set)"}</code>
@@ -31,7 +31,7 @@ export function ReviewStep({
           {c.webhook?.url ? (
             <code className="text-xs">{c.webhook.url}</code>
           ) : (
-            <span className="text-ink-400">none</span>
+            <span className="text-on-surface-variant">none</span>
           )}
         </Row>
         <Row label="Poll interval">every {c.pollIntervalMinutes} min</Row>
@@ -56,8 +56,8 @@ export function ReviewStep({
 function Row({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
   return (
     <div className="flex items-center justify-between px-4 py-3 text-sm">
-      <dt className="font-medium text-ink-700">{label}</dt>
-      <dd className="text-ink-900">{children}</dd>
+      <dt className="font-medium text-on-surface-variant">{label}</dt>
+      <dd className="text-on-surface">{children}</dd>
     </div>
   );
 }

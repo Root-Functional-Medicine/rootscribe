@@ -53,6 +53,13 @@ function migrate(d: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_webhook_log_fired_at ON webhook_log(fired_at DESC);
   `);
+
+  // v2: add is_trash column
+  try {
+    d.exec("ALTER TABLE recordings ADD COLUMN is_trash INTEGER NOT NULL DEFAULT 0");
+  } catch {
+    // column already exists — ignore
+  }
 }
 
 interface RecordingDbRow {
@@ -72,6 +79,7 @@ interface RecordingDbRow {
   transcript_downloaded_at: number | null;
   webhook_audio_fired_at: number | null;
   webhook_transcript_fired_at: number | null;
+  is_trash: number;
   is_historical: number;
   last_error: string | null;
   metadata_json: string | null;
@@ -103,6 +111,7 @@ export function rowToRecording(row: RecordingDbRow): RecordingRow {
     transcriptDownloadedAt: row.transcript_downloaded_at,
     webhookAudioFiredAt: row.webhook_audio_fired_at,
     webhookTranscriptFiredAt: row.webhook_transcript_fired_at,
+    isTrash: row.is_trash === 1,
     isHistorical: row.is_historical === 1,
     lastError: row.last_error,
     status: statusOf(row),

@@ -38,12 +38,12 @@ export function RecordingsDirStep({
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-ink-900">Recordings folder</h2>
-      <p className="mt-2 text-ink-600">
-        Where should applaud download your recordings?
+      <h2 className="text-2xl font-semibold text-on-surface">Recordings folder</h2>
+      <p className="mt-2 text-on-surface-variant">
+        Where should Applaud download your recordings?
       </p>
       <div className="mt-6 space-y-3">
-        <label className="block text-sm font-medium text-ink-700">Absolute path</label>
+        <label className="block text-sm font-medium text-on-surface-variant">Absolute path</label>
         <div className="flex gap-2">
           <input
             className="input font-mono text-sm"
@@ -58,15 +58,15 @@ export function RecordingsDirStep({
             {checking ? "Checking…" : "Check"}
           </button>
         </div>
-        <p className="text-xs text-ink-500">
+        <p className="text-xs text-on-surface-variant">
           Relative paths are resolved from the current working directory.
         </p>
       </div>
 
       {result && (
         <div
-          className={`mt-4 rounded-md p-3 text-sm ${
-            result.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
+          className={`mt-4 rounded-lg p-3 text-sm ${
+            result.ok ? "bg-primary/10 text-primary" : "bg-error/10 text-error"
           }`}
         >
           {result.ok ? (

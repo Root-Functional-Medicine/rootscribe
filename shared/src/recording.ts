@@ -56,6 +56,7 @@ export interface RecordingRow {
   transcriptDownloadedAt: number | null;
   webhookAudioFiredAt: number | null;
   webhookTranscriptFiredAt: number | null;
+  isTrash: boolean;
   isHistorical: boolean;
   lastError: string | null;
   status: RecordingStatus;
@@ -72,6 +73,7 @@ export type SyncEventType =
   | "poll_end"
   | "recording_new"
   | "recording_downloaded"
+  | "recording_renamed"
   | "error"
   | "auth_required";
 

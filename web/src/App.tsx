@@ -30,7 +30,7 @@ export function App(): JSX.Element {
 
   if (setupStatus.isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center text-ink-500">
+      <div className="flex h-screen items-center justify-center text-on-surface-variant">
         loading…
       </div>
     );

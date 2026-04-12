@@ -42,13 +42,13 @@ export function WebhookStep({
 
   return (
     <div>
-      <h2 className="text-2xl font-semibold text-ink-900">Webhook (optional)</h2>
-      <p className="mt-2 text-ink-600">
+      <h2 className="text-2xl font-semibold text-on-surface">Webhook (optional)</h2>
+      <p className="mt-2 text-on-surface-variant">
         We'll POST to this URL whenever a new recording or transcript is downloaded. Leave
         blank to skip.
       </p>
       <div className="mt-6 space-y-3">
-        <label className="block text-sm font-medium text-ink-700">Webhook URL</label>
+        <label className="block text-sm font-medium text-on-surface-variant">Webhook URL</label>
         <div className="flex gap-2">
           <input
             className="input"
@@ -68,15 +68,15 @@ export function WebhookStep({
             {testing ? "Testing…" : "Test"}
           </button>
         </div>
-        <p className="text-xs text-ink-500">
+        <p className="text-xs text-on-surface-variant">
           We'll POST a small <code>{`{"event": "applaud.test"}`}</code> payload to
           verify reachability.
         </p>
       </div>
       {testResult && (
         <div
-          className={`mt-4 rounded-md p-3 text-sm ${
-            testResult.ok ? "bg-emerald-50 text-emerald-800" : "bg-red-50 text-red-800"
+          className={`mt-4 rounded-lg p-3 text-sm ${
+            testResult.ok ? "bg-primary/10 text-primary" : "bg-error/10 text-error"
           }`}
         >
           {testResult.ok ? (
