@@ -109,7 +109,7 @@ To start:
     pnpm start
 
 Your browser will open to the setup wizard. You can also navigate to
-http://127.0.0.1:7528/setup manually if it doesn't open automatically.
+http://127.0.0.1:44471/setup manually if it doesn't open automatically.
 
 EOF
 }
