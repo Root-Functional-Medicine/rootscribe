@@ -15,6 +15,7 @@ export interface AppConfig {
   token: string | null;
   tokenExp: number | null;
   tokenEmail: string | null;
+  plaudRegion: string | null;
   recordingsDir: string | null;
   webhook: WebhookConfig | null;
   pollIntervalMinutes: number;
@@ -28,6 +29,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   token: null,
   tokenExp: null,
   tokenEmail: null,
+  plaudRegion: null,
   recordingsDir: null,
   webhook: null,
   pollIntervalMinutes: 10,

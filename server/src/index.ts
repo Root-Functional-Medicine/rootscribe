@@ -78,7 +78,8 @@ function shouldOpenBrowser(): boolean {
 
 async function main(): Promise<void> {
   ensureConfigDir();
-  if (!acquireLock()) {
+  // Skip lock file in Docker — PID reuse makes it unreliable in containers
+  if (!process.env.APPLAUD_CONFIG_DIR && !acquireLock()) {
     process.exit(1);
   }
 
@@ -119,8 +120,10 @@ async function main(): Promise<void> {
     });
   }
 
-  const { host, port } = cfg.bind;
-  app.listen(port, host, () => {
+  const bindHost = process.env.APPLAUD_CONFIG_DIR ? "0.0.0.0" : cfg.bind.host;
+  const { port } = cfg.bind;
+  app.listen(port, bindHost, () => {
+    const host = bindHost;
     const url = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
     logger.info({ url }, `applaud listening`);
     // eslint-disable-next-line no-console

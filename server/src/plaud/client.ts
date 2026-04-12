@@ -1,7 +1,19 @@
 import { logger } from "../logger.js";
 import { loadConfig, updateConfig } from "../config.js";
 
-export const PLAUD_API_BASE = "https://api.plaud.ai";
+const REGION_API_BASES: Record<string, string> = {
+  "aws:us-west-2": "https://api.plaud.ai",
+  "aws:eu-central-1": "https://eu-api.plaud.ai",
+};
+const DEFAULT_API_BASE = "https://api.plaud.ai";
+
+export function getPlaudApiBase(): string {
+  const cfg = loadConfig();
+  if (cfg.plaudRegion) {
+    return REGION_API_BASES[cfg.plaudRegion] ?? DEFAULT_API_BASE;
+  }
+  return DEFAULT_API_BASE;
+}
 
 export class PlaudAuthError extends Error {
   constructor(message: string) {
@@ -35,7 +47,7 @@ function getToken(): string {
 const USER_AGENT = "applaud/0.1.0 (+https://github.com/rsteckler/applaud)";
 
 export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promise<Response> {
-  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${PLAUD_API_BASE}${pathOrUrl}`;
+  const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${getPlaudApiBase()}${pathOrUrl}`;
   const token = init.authOverride ?? getToken();
   const headers: Record<string, string> = {
     accept: "application/json",

@@ -3,6 +3,9 @@ import path from "node:path";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 
 export function configDir(): string {
+  const explicit = process.env.APPLAUD_CONFIG_DIR;
+  if (explicit && explicit.length > 0) return explicit;
+
   const plat = platform();
   if (plat === "darwin") {
     return path.join(homedir(), "Library", "Application Support", "applaud");

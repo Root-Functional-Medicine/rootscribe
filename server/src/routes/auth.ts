@@ -16,18 +16,18 @@ function extractJwt(raw: string): string | null {
   return m ? m[0] : null;
 }
 
-function parseJwt(jwt: string): { iat: number | null; exp: number | null; email: string | null } {
+function parseJwt(jwt: string): { iat: number | null; exp: number | null; email: string | null; region: string | null } {
   try {
     const parts = jwt.split(".");
-    if (parts.length !== 3) return { iat: null, exp: null, email: null };
+    if (parts.length !== 3) return { iat: null, exp: null, email: null, region: null };
     const payload = parts[1];
-    if (!payload) return { iat: null, exp: null, email: null };
+    if (!payload) return { iat: null, exp: null, email: null, region: null };
     const json = JSON.parse(
       Buffer.from(payload.replace(/-/g, "+").replace(/_/g, "/"), "base64").toString("utf8"),
-    ) as { iat?: number; exp?: number; email?: string };
-    return { iat: json.iat ?? null, exp: json.exp ?? null, email: json.email ?? null };
+    ) as { iat?: number; exp?: number; email?: string; region?: string };
+    return { iat: json.iat ?? null, exp: json.exp ?? null, email: json.email ?? null, region: json.region ?? null };
   } catch {
-    return { iat: null, exp: null, email: null };
+    return { iat: null, exp: null, email: null, region: null };
   }
 }
 
@@ -95,16 +95,20 @@ authRouter.post("/accept", async (req, res) => {
     res.status(400).json({ error: "no JWT found in the provided string" });
     return;
   }
+  // Extract region from JWT and store it before validation so plaudFetch
+  // hits the correct regional API endpoint.
+  const { email: jwtEmail, exp, region } = parseJwt(jwt);
+  if (region) updateConfig({ plaudRegion: region });
+
   const v = await validateToken(jwt);
   if (!v.ok) {
     res.status(400).json({ ok: false, error: v.error });
     return;
   }
-  const { email: jwtEmail, exp } = parseJwt(jwt);
   // Prefer client-provided email (comes from LevelDB scan in the detect flow);
   // fall back to anything the JWT itself carries.
   const email = parsed.data.email ?? jwtEmail ?? null;
-  updateConfig({ token: jwt, tokenExp: exp, tokenEmail: email });
+  updateConfig({ token: jwt, tokenExp: exp, tokenEmail: email, plaudRegion: region });
   res.json({ ok: true, email, exp });
 });
 
@@ -151,11 +155,12 @@ authRouter.get("/watch/:id/events", (req, res) => {
     if (e.type === "found") {
       // Persist the found token immediately so the UI can advance.
       const t = e.token;
-      const { email, exp } = parseJwt(t.token);
+      const { email, exp, region } = parseJwt(t.token);
       updateConfig({
         token: t.token,
         tokenExp: exp,
         tokenEmail: email ?? t.email,
+        plaudRegion: region,
       });
     }
   });

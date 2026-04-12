@@ -119,6 +119,33 @@ The `n8n/` folder contains importable n8n workflow templates. To use one, open n
 
 ![Settings](assets/Screenshot%202026-04-11%20204912.png)
 
+## Docker
+
+Pull the pre-built image and run:
+
+```bash
+docker run -d \
+  --name applaud \
+  -p 44471:44471 \
+  -v applaud-config:/data/config \
+  -v applaud-recordings:/data/recordings \
+  ghcr.io/rsteckler/applaud:latest
+```
+
+Or build from source:
+
+```bash
+docker build -t applaud .
+docker run -d \
+  --name applaud \
+  -p 44471:44471 \
+  -v applaud-config:/data/config \
+  -v applaud-recordings:/data/recordings \
+  applaud
+```
+
+Open `http://localhost:44471/setup` to configure. On first run, the setup wizard will ask you to paste your Plaud token manually (browser auto-detect doesn't work inside a container).
+
 ## Running in the background
 
 Applaud is a foreground process. To keep it running without a terminal:
