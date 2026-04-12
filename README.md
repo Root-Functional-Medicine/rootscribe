@@ -109,7 +109,7 @@ Each recording gets its own folder under your chosen recordings directory:
 
 The `n8n/` folder contains importable n8n workflow templates. To use one, open n8n, create a new workflow, then **Import from File** and select the JSON file. See [`n8n/README.md`](n8n/README.md) for setup details.
 
-![Settings](assets/Screenshot%202026-04-11%20203904.png)
+![Settings](assets/Screenshot%202026-04-11%20204552.png)
 
 ## Running in the background
 
