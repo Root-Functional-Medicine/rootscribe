@@ -23,8 +23,14 @@ A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recording
 
 First, you should never run commands you find on the internet that end in `| sh`. With that said, here's the easiest way to install Applaud:
 
+**macOS / Linux / WSL:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rsteckler/applaud/v0.5.0/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/rsteckler/applaud/v0.5.5/install.sh | sh
+```
+
+**Windows (PowerShell):**
+```powershell
+irm https://raw.githubusercontent.com/rsteckler/applaud/v0.5.5/install.ps1 | iex
 ```
 
 The installer does everything needed to install Applaud into a subfolder named `./applaud`. To run it:
