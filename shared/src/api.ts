@@ -4,7 +4,6 @@ import type {
   RecordingDetail,
   InboxStatus,
   EffectiveInboxStatus,
-  JiraLink,
 } from "./recording.js";
 
 export interface AuthDetectResponse {

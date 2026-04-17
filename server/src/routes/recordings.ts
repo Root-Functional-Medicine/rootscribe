@@ -216,11 +216,15 @@ recordingsRouter.patch("/:id/status", (req, res) => {
     res.status(400).json({ error: "status must be one of: new, reviewed, archived" });
     return;
   }
-  // Match the strictness of /notes and /category: invalid types should 400
-  // instead of silently coercing to null, otherwise clients sending a wrong
-  // type get a no-op they can't distinguish from success.
-  if (notes !== undefined && notes !== null && typeof notes !== "string") {
-    res.status(400).json({ error: "notes must be a string or null" });
+  // Notes on this endpoint are optional and merge-only: pass a string to
+  // overwrite inbox_notes during the transition, or omit the field to leave
+  // the existing value alone (the reviewed branch uses COALESCE). To
+  // explicitly clear notes, clients use PATCH /notes with `null` — that's
+  // the only route where the "clear" semantics exist.
+  if (notes !== undefined && typeof notes !== "string") {
+    res.status(400).json({
+      error: "notes must be a string if provided (use PATCH /notes to clear notes)",
+    });
     return;
   }
   const notesArg: string | null = typeof notes === "string" ? notes : null;
@@ -285,7 +289,14 @@ recordingsRouter.patch("/:id/category", (req, res) => {
     res.status(400).json({ error: "missing id" });
     return;
   }
-  const raw = req.body?.category;
+  // Require the field so a missing-key request returns an explicit "required"
+  // error instead of the misleading type-check message.
+  const body: Record<string, unknown> = (req.body as Record<string, unknown>) ?? {};
+  if (!Object.prototype.hasOwnProperty.call(body, "category")) {
+    res.status(400).json({ error: "category field is required (pass null to clear)" });
+    return;
+  }
+  const raw = body.category;
   if (raw !== null && typeof raw !== "string") {
     res.status(400).json({ error: "category must be a string or null" });
     return;
@@ -305,7 +316,14 @@ recordingsRouter.patch("/:id/notes", (req, res) => {
     res.status(400).json({ error: "missing id" });
     return;
   }
-  const raw = req.body?.notes;
+  // Same explicit-required pattern as /category and /snooze — differentiates
+  // "missing field" from "wrong type" for the caller.
+  const body: Record<string, unknown> = (req.body as Record<string, unknown>) ?? {};
+  if (!Object.prototype.hasOwnProperty.call(body, "notes")) {
+    res.status(400).json({ error: "notes field is required (pass null to clear)" });
+    return;
+  }
+  const raw = body.notes;
   if (raw !== null && typeof raw !== "string") {
     res.status(400).json({ error: "notes must be a string or null" });
     return;
