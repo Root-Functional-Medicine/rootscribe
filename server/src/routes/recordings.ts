@@ -379,12 +379,20 @@ recordingsRouter.delete("/:id/tags/:tag", (req, res) => {
     res.status(400).json({ error: "missing id or tag" });
     return;
   }
+  // `addRecordingTag` trims before insert, so delete must trim too —
+  // otherwise a client sending `/tags/%20foo%20` silently no-ops against
+  // the stored canonical `foo`.
+  const normalizedTag = tag.trim();
+  if (!normalizedTag) {
+    res.status(400).json({ error: "tag must be a non-empty string" });
+    return;
+  }
   const exists = getRecordingWithRelations(id);
   if (!exists) {
     res.status(404).json({ error: "not found" });
     return;
   }
-  removeRecordingTag(id, tag);
+  removeRecordingTag(id, normalizedTag);
   respondWithDetail(res, id);
 });
 

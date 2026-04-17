@@ -154,7 +154,9 @@ export const api = {
     jsonFetch<{ ok: boolean }>("/api/sync/trigger", { method: "POST", body: "{}" }),
   // Inbox mutations — each returns the freshly-hydrated RecordingDetail so the
   // React Query cache can be patched without a second round-trip.
-  setInboxStatus: (id: string, status: InboxStatus, notes?: string | null) =>
+  // `notes` is merge-only here: the server rejects explicit null, so the
+  // client type only accepts `string`. Use `setInboxNotes` to clear.
+  setInboxStatus: (id: string, status: InboxStatus, notes?: string) =>
     jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status, ...(notes !== undefined ? { notes } : {}) }),

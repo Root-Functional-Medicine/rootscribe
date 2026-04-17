@@ -55,7 +55,10 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              commit();
+              // Let onBlur be the single commit path — calling commit()
+              // here and then setEditing(false) would fire a second commit
+              // on the resulting blur, sending a duplicate PATCH.
+              e.currentTarget.blur();
             }
             if (e.key === "Escape") {
               canceledRef.current = true;
