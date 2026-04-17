@@ -51,6 +51,9 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   };
 
   const commit = (): void => {
+    // Same pending-guard as TagEditor — Enter-in-input bypasses the disabled
+    // button state, so rapid submits could otherwise queue duplicate requests.
+    if (addLink.isPending) return;
     if (!keyValid) return;
     if (links.some((l) => l.issueKey === normalized)) {
       // Duplicate — already in the list. Clear inputs locally; no server call.

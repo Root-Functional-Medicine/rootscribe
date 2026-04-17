@@ -30,6 +30,10 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
   });
 
   const commit = (): void => {
+    // Ignore additional submits while a mutation is in flight. The Add button
+    // is disabled via `addTag.isPending`, but Enter-in-input bypasses that —
+    // without this guard rapid Enter presses queue redundant requests.
+    if (addTag.isPending) return;
     const value = draft.trim();
     if (!value) return;
     // Already-present: clear draft immediately — no server call needed.

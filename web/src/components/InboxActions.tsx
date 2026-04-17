@@ -33,9 +33,13 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
   const busy = setStatus.isPending || setSnooze.isPending;
   const effStatus = recording.effectiveInboxStatus;
   const isSnoozed = effStatus === "snoozed";
+  // Prefer the most recent error. /snooze can return 409 if another client
+  // moved the recording out of 'new' between render and click, so surfacing
+  // the reason keeps the user from silently losing an action.
+  const activeError = setSnooze.error ?? setStatus.error;
 
   return (
-    <div className="flex flex-wrap items-center gap-2 relative">
+    <div className="flex flex-wrap items-start gap-2 relative">
       {/* Mark Reviewed — primary when there's work to do (new/snoozed) */}
       <button
         onClick={() => setStatus.mutate("reviewed")}
@@ -123,6 +127,12 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
             Reopen
           </span>
         </button>
+      )}
+
+      {activeError && (
+        <p className="basis-full text-xs text-error">
+          {activeError instanceof Error ? activeError.message : "Something went wrong."}
+        </p>
       )}
     </div>
   );
