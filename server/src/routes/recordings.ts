@@ -39,17 +39,28 @@ function parseFilter(value: unknown): RecordingsListFilter | undefined {
   return undefined;
 }
 
-// Parse query-string numbers defensively — `Number("foo")` is `NaN`, and
-// passing NaN to better-sqlite3's LIMIT/OFFSET bindings blows up at query time.
-function parseFiniteNumberQuery(value: unknown, fallback: number): number {
+// Parse query-string numbers defensively: rejects non-finite input (NaN,
+// Infinity), floors to an integer, and clamps into [min, max]. Protects
+// `LIMIT`/`OFFSET` from pathological inputs — e.g. SQLite treats `LIMIT -1`
+// as "no limit", and fractional bindings get silently coerced downstream.
+function parseIntQuery(
+  value: unknown,
+  { fallback, min, max }: { fallback: number; min: number; max: number },
+): number {
   if (typeof value !== "string" && typeof value !== "number") return fallback;
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  if (!Number.isFinite(parsed)) return fallback;
+  const floored = Math.floor(parsed);
+  if (floored < min) return min;
+  if (floored > max) return max;
+  return floored;
 }
 
 recordingsRouter.get("/", (req, res) => {
-  const limit = parseFiniteNumberQuery(req.query.limit, 100);
-  const offset = parseFiniteNumberQuery(req.query.offset, 0);
+  // 500 is the same upper bound `listRecordingRows` clamps to — matching
+  // here means pagination is predictable regardless of which layer clamps.
+  const limit = parseIntQuery(req.query.limit, { fallback: 100, min: 1, max: 500 });
+  const offset = parseIntQuery(req.query.offset, { fallback: 0, min: 0, max: Number.MAX_SAFE_INTEGER });
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
   // Trim tag/category so leading/trailing whitespace from URL-encoded inputs
   // (e.g. "?tag=foo%20") doesn't silently produce zero matches.
