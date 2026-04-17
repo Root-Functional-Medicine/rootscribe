@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RecordingDetail, InboxStatus } from "@applaud/shared";
 import { api } from "../api.js";
+import { applyRecordingMutation } from "../lib/recordingCache.js";
 import { SnoozeMenu } from "./SnoozeMenu.js";
 
 interface InboxActionsProps {
@@ -17,18 +18,16 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const snoozeToggleRef = useRef<HTMLButtonElement>(null);
 
-  const invalidate = async (): Promise<void> => {
-    await qc.invalidateQueries({ queryKey: ["recording", recording.id] });
-    await qc.invalidateQueries({ queryKey: ["recordings"] });
-  };
+  const applyResponse = (response: { recording: RecordingDetail }): void =>
+    applyRecordingMutation(qc, recording.id, response);
 
   const setStatus = useMutation({
     mutationFn: (status: InboxStatus) => api.setInboxStatus(recording.id, status),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
   const setSnooze = useMutation({
     mutationFn: (until: number | null) => api.setSnooze(recording.id, until),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
 
   const busy = setStatus.isPending || setSnooze.isPending;

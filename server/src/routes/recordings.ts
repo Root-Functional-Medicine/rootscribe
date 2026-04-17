@@ -65,36 +65,50 @@ recordingsRouter.get("/", (req, res) => {
 
 // Build the full RecordingDetail from DB + on-disk transcript/summary/metadata.
 // Extracted so mutation endpoints can reuse it without duplicating the IO.
-function readRecordingDetail(id: string): { detail: RecordingDetail; mediaBase: string } | null {
+//
+// `skipFiles` lets mutation endpoints skip the disk reads for transcript/
+// summary/metadata — those don't change in response to inbox mutations, and
+// for frequent edits (tags/notes/category/status) rereading large transcript
+// files on every call is wasted IO. The client merges the response into its
+// cached detail so the null fields don't overwrite in-memory content.
+interface ReadRecordingDetailOptions {
+  skipFiles?: boolean;
+}
+
+function readRecordingDetail(
+  id: string,
+  opts: ReadRecordingDetailOptions = {},
+): { detail: RecordingDetail; mediaBase: string } | null {
   const rel = getRecordingWithRelations(id);
   if (!rel) return null;
-  const cfg = loadConfig();
 
   let transcriptText: string | null = null;
   let summaryMarkdown: string | null = null;
   let metadata: Record<string, unknown> | null = null;
 
-  try {
-    if (rel.row.transcriptPath) {
-      const txtPath = path.join(path.dirname(rel.row.transcriptPath), "transcript.txt");
-      if (existsSync(txtPath)) transcriptText = readFileSync(txtPath, "utf8");
+  if (!opts.skipFiles) {
+    try {
+      if (rel.row.transcriptPath) {
+        const txtPath = path.join(path.dirname(rel.row.transcriptPath), "transcript.txt");
+        if (existsSync(txtPath)) transcriptText = readFileSync(txtPath, "utf8");
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (rel.row.summaryPath && existsSync(rel.row.summaryPath)) {
-      summaryMarkdown = readFileSync(rel.row.summaryPath, "utf8");
+    try {
+      if (rel.row.summaryPath && existsSync(rel.row.summaryPath)) {
+        summaryMarkdown = readFileSync(rel.row.summaryPath, "utf8");
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (rel.row.metadataPath && existsSync(rel.row.metadataPath)) {
-      metadata = JSON.parse(readFileSync(rel.row.metadataPath, "utf8")) as Record<string, unknown>;
+    try {
+      if (rel.row.metadataPath && existsSync(rel.row.metadataPath)) {
+        metadata = JSON.parse(readFileSync(rel.row.metadataPath, "utf8")) as Record<string, unknown>;
+      }
+    } catch {
+      /* ignore */
     }
-  } catch {
-    /* ignore */
   }
 
   const detail: RecordingDetail = {
@@ -157,7 +171,9 @@ recordingsRouter.delete("/:id", (req, res) => {
 // transition is invalid (e.g. snoozing a non-'new' recording).
 
 function respondWithDetail(res: import("express").Response, id: string): void {
-  const full = readRecordingDetail(id);
+  // Mutation responses skip transcript/summary/metadata IO — the client keeps
+  // those fields from its cached copy when merging this response.
+  const full = readRecordingDetail(id, { skipFiles: true });
   if (!full) {
     res.status(404).json({ error: "not found" });
     return;

@@ -1,6 +1,8 @@
 import { useState, type KeyboardEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { RecordingDetail } from "@applaud/shared";
 import { api } from "../api.js";
+import { applyRecordingMutation } from "../lib/recordingCache.js";
 
 interface TagEditorProps {
   recordingId: string;
@@ -11,18 +13,16 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
 
-  const invalidate = async (): Promise<void> => {
-    await qc.invalidateQueries({ queryKey: ["recording", recordingId] });
-    await qc.invalidateQueries({ queryKey: ["recordings"] });
-  };
+  const applyResponse = (response: { recording: RecordingDetail }): void =>
+    applyRecordingMutation(qc, recordingId, response);
 
   const addTag = useMutation({
     mutationFn: (tag: string) => api.addTag(recordingId, tag),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
   const removeTag = useMutation({
     mutationFn: (tag: string) => api.removeTag(recordingId, tag),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
 
   const commit = (): void => {

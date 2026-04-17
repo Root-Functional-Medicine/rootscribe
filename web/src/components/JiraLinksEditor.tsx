@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JiraLink } from "@applaud/shared";
+import type { JiraLink, RecordingDetail } from "@applaud/shared";
 import { isValidJiraKey, buildJiraUrl } from "@applaud/shared";
 import { api } from "../api.js";
+import { applyRecordingMutation } from "../lib/recordingCache.js";
 
 interface JiraLinksEditorProps {
   recordingId: string;
@@ -20,18 +21,17 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
   const jiraBaseUrl = cfg.data?.config.jiraBaseUrl ?? "";
 
-  const invalidate = async (): Promise<void> => {
-    await qc.invalidateQueries({ queryKey: ["recording", recordingId] });
-  };
+  const applyResponse = (response: { recording: RecordingDetail }): void =>
+    applyRecordingMutation(qc, recordingId, response);
 
   const addLink = useMutation({
     mutationFn: (params: { issueKey: string; issueUrl: string | null }) =>
       api.addJiraLink(recordingId, params),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
   const removeLink = useMutation({
     mutationFn: (key: string) => api.removeJiraLink(recordingId, key),
-    onSuccess: invalidate,
+    onSuccess: applyResponse,
   });
 
   const normalized = issueKey.trim().toUpperCase();

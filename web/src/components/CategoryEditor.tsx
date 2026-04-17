@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import type { RecordingDetail } from "@applaud/shared";
 import { api } from "../api.js";
+import { applyRecordingMutation } from "../lib/recordingCache.js";
 
 interface CategoryEditorProps {
   recordingId: string;
@@ -23,14 +25,10 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
     if (!editing) setDraft(category ?? "");
   }, [category, editing]);
 
-  const invalidate = async (): Promise<void> => {
-    await qc.invalidateQueries({ queryKey: ["recording", recordingId] });
-    await qc.invalidateQueries({ queryKey: ["recordings"] });
-  };
-
   const mutation = useMutation({
     mutationFn: (value: string | null) => api.setCategory(recordingId, value),
-    onSuccess: invalidate,
+    onSuccess: (response: { recording: RecordingDetail }) =>
+      applyRecordingMutation(qc, recordingId, response),
   });
 
   const commit = (): void => {
