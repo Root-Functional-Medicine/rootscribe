@@ -267,6 +267,24 @@ async function emitChannelNudges(): Promise<void> {
 
 const POLL_MS = 30_000;
 let pollTimer: NodeJS.Timeout | null = null;
+let pollingStopped = false;
+
+// Self-scheduling loop instead of setInterval: each iteration waits for the
+// previous emitChannelNudges() to settle before scheduling the next tick, so
+// a slow tick (hung stdio, SQLite contention) can't overlap with its successor
+// and produce duplicate nudges.
+async function runEmitChannelNudgesLoop(): Promise<void> {
+  if (pollingStopped) return;
+  try {
+    await emitChannelNudges();
+  } finally {
+    if (!pollingStopped) {
+      pollTimer = setTimeout(() => {
+        void runEmitChannelNudgesLoop();
+      }, POLL_MS);
+    }
+  }
+}
 
 async function main(): Promise<void> {
   const transport = new StdioServerTransport();
@@ -274,12 +292,13 @@ async function main(): Promise<void> {
 
   // Kick one off immediately after connect so current backlog gets nudged,
   // then keep polling while the session is open.
-  void emitChannelNudges();
-  pollTimer = setInterval(() => void emitChannelNudges(), POLL_MS);
+  pollingStopped = false;
+  void runEmitChannelNudgesLoop();
 
   const cleanup = (): void => {
+    pollingStopped = true;
     if (pollTimer) {
-      clearInterval(pollTimer);
+      clearTimeout(pollTimer);
       pollTimer = null;
     }
     // Explicit exit — `server.connect()` keeps the event loop alive via stdio,
