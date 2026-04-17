@@ -30,6 +30,7 @@ export function Settings(): JSX.Element {
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
 
   useEffect(() => {
@@ -47,6 +48,7 @@ export function Settings(): JSX.Element {
 
   const save = async (): Promise<void> => {
     setSaving(true);
+    setSaveError(null);
     try {
       // Omit jiraBaseUrl from the patch when blank — the server's Zod
       // `.url()` validator rejects empty strings, which would break Save
@@ -63,6 +65,11 @@ export function Settings(): JSX.Element {
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);
+    } catch (err) {
+      // Surface server validation errors (e.g. bad Jira URL) inline — without
+      // this, the promise rejection would vanish and the user would see no
+      // feedback about why Save didn't work.
+      setSaveError(err instanceof Error ? err.message : "Failed to save settings.");
     } finally {
       setSaving(false);
     }
@@ -316,6 +323,9 @@ export function Settings(): JSX.Element {
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>
+        {saveError && (
+          <p className="mt-3 text-xs text-error max-w-md text-center">{saveError}</p>
+        )}
         <p className="mt-4 font-label text-[10px] text-on-surface-variant uppercase tracking-[0.15em]">
           Changes take effect immediately on local engine.
         </p>

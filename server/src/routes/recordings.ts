@@ -145,7 +145,10 @@ function readRecordingDetail(
     inboxNotes: rel.inboxNotes,
     jiraLinks: rel.jiraLinks,
   };
-  return { detail, mediaBase: `/media/${encodeURI(rel.row.folder)}` };
+  // encodeURIComponent (not encodeURI) — folder names may contain characters
+  // like `#` that encodeURI leaves untouched, which would start a URL fragment
+  // and never reach the /media route.
+  return { detail, mediaBase: `/media/${encodeURIComponent(rel.row.folder)}` };
 }
 
 recordingsRouter.get("/:id", (req, res) => {

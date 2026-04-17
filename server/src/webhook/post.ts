@@ -20,7 +20,9 @@ function readIfExists(absPath: string): string | null {
 function buildPayload(event: WebhookEvent, row: RecordingRow): WebhookPayload {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURI(row.folder)}`;
+  // See routes/recordings.ts readRecordingDetail — encodeURIComponent so folder
+  // names containing `#`/`?` don't truncate the URL at a fragment/query.
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeURIComponent(row.folder)}`;
   const payload: WebhookPayload = {
     event,
     recording: {
@@ -136,7 +138,7 @@ function buildTestPayload(): WebhookPayload & { test: true } {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
   const folder = "2026/04/11/sample-recording";
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURI(folder)}`;
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeURIComponent(folder)}`;
   const now = Date.now();
   return {
     test: true,
