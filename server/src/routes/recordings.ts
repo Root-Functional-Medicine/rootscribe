@@ -59,8 +59,10 @@ function parseIntQuery(
 recordingsRouter.get("/", (req, res) => {
   // 500 is the same upper bound `listRecordingRows` clamps to — matching
   // here means pagination is predictable regardless of which layer clamps.
+  // offset is capped at 1,000,000 (= 5,000 pages at 500/page) to keep
+  // pagination bounded-cost and avoid large-offset DoS vectors.
   const limit = parseIntQuery(req.query.limit, { fallback: 100, min: 1, max: 500 });
-  const offset = parseIntQuery(req.query.offset, { fallback: 0, min: 0, max: Number.MAX_SAFE_INTEGER });
+  const offset = parseIntQuery(req.query.offset, { fallback: 0, min: 0, max: 1_000_000 });
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
   // Trim tag/category so leading/trailing whitespace from URL-encoded inputs
   // (e.g. "?tag=foo%20") doesn't silently produce zero matches.
@@ -261,6 +263,13 @@ recordingsRouter.patch("/:id/snooze", (req, res) => {
   if (raw === null) {
     until = null;
   } else if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    // Reject past/near-now timestamps: the snooze predicate is
+    // `snoozed_until > now`, so a stale value would persist without
+    // actually snoozing the item. Fail fast instead of silently misleading.
+    if (raw <= Date.now()) {
+      res.status(400).json({ error: "snoozedUntil must be in the future" });
+      return;
+    }
     until = raw;
   } else {
     res.status(400).json({ error: "snoozedUntil must be a positive epoch-ms number or null" });

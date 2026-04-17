@@ -82,6 +82,7 @@ export function InboxFilters({
           </datalist>
           {tag && (
             <button
+              type="button"
               onClick={() => onTagChange("")}
               className="text-on-surface-variant hover:text-on-surface text-[10px] uppercase tracking-widest font-label"
             >
@@ -106,6 +107,7 @@ export function InboxFilters({
           </datalist>
           {category && (
             <button
+              type="button"
               onClick={() => onCategoryChange("")}
               className="text-on-surface-variant hover:text-on-surface text-[10px] uppercase tracking-widest font-label"
             >
