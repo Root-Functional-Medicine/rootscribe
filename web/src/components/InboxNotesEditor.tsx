@@ -27,6 +27,11 @@ export function InboxNotesEditor({ recordingId, notes }: InboxNotesEditorProps):
   });
 
   const commit = (): void => {
+    // Serialize updates: ignore blur while a save is in flight so an older
+    // response can't overwrite a newer edit when the user types-blurs-types-
+    // blurs quickly. The textarea is also disabled during the mutation, so
+    // this guard mainly covers programmatic blur races.
+    if (mutation.isPending) return;
     // Preserve user-entered whitespace/newlines verbatim — only convert to
     // null when the text is entirely whitespace. Trimming the stored value
     // would silently drop intentional leading/trailing formatting.
@@ -37,11 +42,12 @@ export function InboxNotesEditor({ recordingId, notes }: InboxNotesEditorProps):
 
   return (
     <textarea
-      className="input text-sm py-2 min-h-[5rem] resize-y font-sans"
+      className="input text-sm py-2 min-h-[5rem] resize-y font-sans disabled:opacity-60"
       placeholder="Notes…"
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={commit}
+      disabled={mutation.isPending}
     />
   );
 }

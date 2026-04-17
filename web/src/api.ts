@@ -154,13 +154,22 @@ export const api = {
     jsonFetch<{ ok: boolean }>("/api/sync/trigger", { method: "POST", body: "{}" }),
   // Inbox mutations — each returns the freshly-hydrated RecordingDetail so the
   // React Query cache can be patched without a second round-trip.
-  // `notes` is merge-only here: the server rejects explicit null, so the
-  // client type only accepts `string`. Use `setInboxNotes` to clear.
-  setInboxStatus: (id: string, status: InboxStatus, notes?: string) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/status`, {
+  // `notes` is only valid when status is "reviewed" (enforced both by the
+  // shared `InboxStatusPatchRequest` discriminated union and by the server).
+  // The conditional tuple on `...args` makes the constraint compile-time:
+  // `setInboxStatus(id, "new")` is valid, `setInboxStatus(id, "new", "x")` is
+  // a type error, and `setInboxStatus(id, "reviewed", "x")` passes.
+  setInboxStatus: <TStatus extends InboxStatus>(
+    id: string,
+    status: TStatus,
+    ...args: TStatus extends "reviewed" ? [notes?: string] : []
+  ) => {
+    const notes = args[0];
+    return jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status, ...(notes !== undefined ? { notes } : {}) }),
-    }),
+    });
+  },
   setSnooze: (id: string, snoozedUntil: number | null) =>
     jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/snooze`, {
       method: "PATCH",
