@@ -10,6 +10,19 @@ interface JiraLinksEditorProps {
   links: JiraLink[];
 }
 
+// Defense in depth: the HTTP API validates scheme on write, but the same
+// SQLite DB is also writable by inbox-mcp, which doesn't enforce http/https.
+// Guard here so a `javascript:` or `data:` URL stored via the MCP can't
+// become a clickable XSS vector when rendered.
+function isSafeHttpUrl(candidate: string): boolean {
+  try {
+    const proto = new URL(candidate).protocol;
+    return proto === "http:" || proto === "https:";
+  } catch {
+    return false;
+  }
+}
+
 export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [issueKey, setIssueKey] = useState("");
@@ -77,7 +90,11 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
           // Fall back to building the URL from the configured base when the
           // link was stored without an explicit URL (older rows, or rows added
           // before the config query resolved).
-          const href = l.issueUrl ?? (jiraBaseUrl ? buildJiraUrl(jiraBaseUrl, l.issueKey) : null);
+          const candidate = l.issueUrl ?? (jiraBaseUrl ? buildJiraUrl(jiraBaseUrl, l.issueKey) : null);
+          // Only render a clickable anchor for http/https URLs. Anything else
+          // (e.g. a stray `javascript:` row written by an older MCP) degrades
+          // to a non-clickable span.
+          const href = candidate && isSafeHttpUrl(candidate) ? candidate : null;
           return (
             <div
               key={l.id}
