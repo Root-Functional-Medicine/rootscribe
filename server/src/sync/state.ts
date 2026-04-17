@@ -158,6 +158,10 @@ export interface ListRecordingsOptions {
   filter?: RecordingsListFilter;
   tag?: string;
   category?: string;
+  // When true, also return the `availableTags` / `availableCategories` facets
+  // for autocomplete. Two DISTINCT scans on every list request would be
+  // wasteful for frequent filter/search refetches — callers opt in.
+  facets?: boolean;
 }
 
 // Build the WHERE clause for the filter axis. Returns a SQL fragment plus the
@@ -247,8 +251,8 @@ export function listRecordingRows(opts: ListRecordingsOptions = {}): {
     // per-row `effectiveInboxStatus` can't flip to/from "snoozed" between
     // filter evaluation and row hydration.
     items: rows.map((r) => rowToRecording(r, tagMap.get(r.id) ?? [], now)),
-    availableTags: loadAllTags(),
-    availableCategories: loadAllCategories(),
+    availableTags: opts.facets ? loadAllTags() : [],
+    availableCategories: opts.facets ? loadAllCategories() : [],
   };
 }
 

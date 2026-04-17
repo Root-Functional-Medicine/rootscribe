@@ -52,9 +52,14 @@ recordingsRouter.get("/", (req, res) => {
       ? req.query.category.trim()
       : undefined;
   const filter = parseFilter(req.query.filter);
+  // Facets (availableTags/availableCategories) are expensive-ish DISTINCT
+  // scans — only compute them when the caller asks ("?facets=1"), so
+  // paging/search/filter refetches don't pay that cost.
+  const facets = req.query.facets === "1" || req.query.facets === "true";
   const result = listRecordingRows({
     limit,
     offset,
+    facets,
     ...(search ? { search } : {}),
     ...(filter ? { filter } : {}),
     ...(tag ? { tag } : {}),

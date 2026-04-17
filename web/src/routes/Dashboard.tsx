@@ -154,6 +154,9 @@ export function Dashboard(): JSX.Element {
   const listParams = useMemo(
     () => ({
       limit: 200,
+      // Dashboard is the only surface that needs the tag/category autocomplete
+      // data, so only this query pays for the DISTINCT scans.
+      facets: true,
       ...(search ? { search } : {}),
       ...(filter !== "all" ? { filter } : {}),
       ...(tag ? { tag } : {}),

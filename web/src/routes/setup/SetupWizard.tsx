@@ -47,8 +47,12 @@ export function SetupWizard(): JSX.Element {
               Setup Wizard &bull; {pct}%
             </span>
           </div>
-          {/* Progress bars */}
-          <div className="grid grid-cols-6 gap-2 h-1.5 w-full">
+          {/* Progress bars — column count derived from STEPS.length so the
+              layout stays correct if steps are added or removed later. */}
+          <div
+            className="grid gap-2 h-1.5 w-full"
+            style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}
+          >
             {STEPS.map((_, i) => (
               <div
                 key={i}
@@ -59,7 +63,10 @@ export function SetupWizard(): JSX.Element {
             ))}
           </div>
           {/* Step labels */}
-          <div className="hidden md:grid grid-cols-6 gap-2 text-center">
+          <div
+            className="hidden md:grid gap-2 text-center"
+            style={{ gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` }}
+          >
             {STEPS.map((label, i) => (
               <span
                 key={label}

@@ -32,8 +32,22 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    // Our endpoints return `{ "error": "human-readable message" }` on failure.
+    // Extract that field when the body is JSON so UI toasts/inline errors get
+    // a clean message instead of the raw `{"error":"…"}` string.
     const body = await res.text().catch(() => "");
-    throw new ApiError(body || `HTTP ${res.status}`, res.status);
+    const contentType = res.headers.get("content-type") ?? "";
+    let message = body || `HTTP ${res.status}`;
+    if (contentType.includes("application/json") && body) {
+      try {
+        const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
+        if (typeof parsed?.error === "string") message = parsed.error;
+        else if (typeof parsed?.message === "string") message = parsed.message;
+      } catch {
+        // Fall back to raw body text if JSON parse fails.
+      }
+    }
+    throw new ApiError(message, res.status);
   }
   return (await res.json()) as T;
 }
@@ -45,6 +59,9 @@ export interface ListRecordingsParams {
   filter?: RecordingsListFilter;
   tag?: string;
   category?: string;
+  // Include availableTags/availableCategories in the response. Pay the extra
+  // DISTINCT scans only when the caller actually needs the autocomplete data.
+  facets?: boolean;
 }
 
 export const api = {
@@ -95,6 +112,7 @@ export const api = {
     if (params.filter) qs.set("filter", params.filter);
     if (params.tag) qs.set("tag", params.tag);
     if (params.category) qs.set("category", params.category);
+    if (params.facets) qs.set("facets", "1");
     return jsonFetch<RecordingsListResponse>(`/api/recordings?${qs.toString()}`);
   },
   recordingDetail: (id: string) =>
