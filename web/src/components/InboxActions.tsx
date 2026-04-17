@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RecordingDetail, InboxStatus } from "@applaud/shared";
 import { api } from "../api.js";
@@ -33,6 +33,14 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
   const busy = setStatus.isPending || setSnooze.isPending;
   const effStatus = recording.effectiveInboxStatus;
   const isSnoozed = effStatus === "snoozed";
+
+  // Snooze popover only makes sense on recordings in the "new" effective state.
+  // Auto-close it when the recording transitions away (via Mark Reviewed /
+  // Archive / etc.) so a stale-open menu doesn't flash back when the user
+  // reopens the item.
+  useEffect(() => {
+    if (effStatus !== "new" && snoozeOpen) setSnoozeOpen(false);
+  }, [effStatus, snoozeOpen]);
   // Prefer the most recent error. /snooze can return 409 if another client
   // moved the recording out of 'new' between render and click, so surfacing
   // the reason keeps the user from silently losing an action.

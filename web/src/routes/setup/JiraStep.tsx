@@ -135,9 +135,9 @@ export function JiraStep({
           <button
             className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10 disabled:opacity-60"
             onClick={() => void saveAndContinue()}
-            disabled={saving}
+            disabled={saving || !initialized}
           >
-            {saving ? "Saving…" : "Next"}
+            {!initialized ? "Loading…" : saving ? "Saving…" : "Next"}
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M5 12h14" />
               <path d="M12 5l7 7-7 7" />

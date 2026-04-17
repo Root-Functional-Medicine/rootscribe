@@ -165,9 +165,6 @@ export function Dashboard(): JSX.Element {
   const listParams = useMemo(
     () => ({
       limit: 200,
-      // Dashboard is the only surface that needs the tag/category autocomplete
-      // data, so only this query pays for the DISTINCT scans.
-      facets: true,
       ...(trimmedSearch ? { search: trimmedSearch } : {}),
       ...(filter !== "all" ? { filter } : {}),
       ...(tag ? { tag } : {}),
@@ -179,6 +176,17 @@ export function Dashboard(): JSX.Element {
   const list = useQuery({
     queryKey: ["recordings", listParams],
     queryFn: () => api.listRecordings(listParams),
+  });
+
+  // Facets (tag/category autocomplete) live in their own query so search and
+  // filter refetches don't re-run the DISTINCT scans every keystroke. Stale
+  // time is generous — the underlying data only changes when the user adds or
+  // removes a tag/category, and `applyRecordingMutation` already invalidates
+  // the broader `["recordings"]` scope which matches this key.
+  const facets = useQuery({
+    queryKey: ["recordings", "facets"],
+    queryFn: () => api.listRecordings({ limit: 1, facets: true }),
+    staleTime: 5 * 60 * 1000,
   });
   const [triggering, setTriggering] = useState(false);
 
@@ -252,8 +260,8 @@ export function Dashboard(): JSX.Element {
           onTagChange={(t) => updateParams({ tag: t || null }, { replace: true })}
           category={category}
           onCategoryChange={(c) => updateParams({ category: c || null }, { replace: true })}
-          availableTags={list.data?.availableTags ?? []}
-          availableCategories={list.data?.availableCategories ?? []}
+          availableTags={facets.data?.availableTags ?? []}
+          availableCategories={facets.data?.availableCategories ?? []}
         />
       </div>
 

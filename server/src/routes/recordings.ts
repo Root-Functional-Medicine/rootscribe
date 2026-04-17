@@ -15,6 +15,7 @@ import {
   removeJiraLink,
 } from "../sync/state.js";
 import { loadConfig } from "../config.js";
+import { encodeFolderPath } from "../lib/url.js";
 import type {
   RecordingDetail,
   InboxStatus,
@@ -145,11 +146,7 @@ function readRecordingDetail(
     inboxNotes: rel.inboxNotes,
     jiraLinks: rel.jiraLinks,
   };
-  // Encode per-segment so `#`/`?` in folder names don't break the URL, but
-  // `/` separators stay intact (otherwise `%2F` would produce an opaque
-  // single-segment path that the /media route can't match).
-  const mediaBase = `/media/${rel.row.folder.split("/").map(encodeURIComponent).join("/")}`;
-  return { detail, mediaBase };
+  return { detail, mediaBase: `/media/${encodeFolderPath(rel.row.folder)}` };
 }
 
 recordingsRouter.get("/:id", (req, res) => {

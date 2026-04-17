@@ -5,15 +5,9 @@ import { loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { logger } from "../logger.js";
 
-const BACKOFF_MS = [5_000, 30_000, 120_000];
+import { encodeFolderPath } from "../lib/url.js";
 
-// Encode a `/`-separated folder path per-segment so `#`, `?`, and other
-// reserved chars get escaped but the `/` separators stay intact. Webhook
-// consumers (and the browser route cache) expect path-like URLs, not
-// `%2F`-mangled opaque strings.
-function encodeFolderPath(folder: string): string {
-  return folder.split("/").map(encodeURIComponent).join("/");
-}
+const BACKOFF_MS = [5_000, 30_000, 120_000];
 
 function readIfExists(absPath: string): string | null {
   try {
