@@ -13,14 +13,16 @@ export function JiraStep({
 }): JSX.Element {
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
   const [url, setUrl] = useState("");
+  const [initialized, setInitialized] = useState(false);
 
-  // Seed from the existing config value (which defaults to the RFM URL on a
-  // fresh install). Keeping the user's previous value means re-running the
-  // wizard doesn't stomp a customized base.
+  // Seed from the existing config value once on first load. Guarded with
+  // `initialized` so a React Query refetch (or the user starting to type
+  // before the query resolves) doesn't clobber in-flight edits.
   useEffect(() => {
-    if (!cfg.data) return;
+    if (!cfg.data || initialized) return;
     setUrl(cfg.data.config.jiraBaseUrl ?? DEFAULT_SUGGESTION);
-  }, [cfg.data]);
+    setInitialized(true);
+  }, [cfg.data, initialized]);
 
   const saveAndContinue = async (): Promise<void> => {
     const trimmed = url.trim() || DEFAULT_SUGGESTION;

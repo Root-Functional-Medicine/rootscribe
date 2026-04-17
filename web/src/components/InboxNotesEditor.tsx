@@ -7,8 +7,8 @@ interface InboxNotesEditorProps {
   notes: string | null;
 }
 
-// Debounced textarea that saves on blur. Keeps notes lightweight — the user
-// types and clicks away, no Save button needed.
+// Textarea that saves on blur. Keeps notes lightweight — the user types and
+// clicks away, no Save button needed.
 export function InboxNotesEditor({ recordingId, notes }: InboxNotesEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [draft, setDraft] = useState(notes ?? "");
@@ -24,8 +24,10 @@ export function InboxNotesEditor({ recordingId, notes }: InboxNotesEditorProps):
   });
 
   const commit = (): void => {
-    const trimmed = draft.trim();
-    const next = trimmed || null;
+    // Preserve user-entered whitespace/newlines verbatim — only convert to
+    // null when the text is entirely whitespace. Trimming the stored value
+    // would silently drop intentional leading/trailing formatting.
+    const next = draft.trim() === "" ? null : draft;
     const current = notes ?? null;
     if (next !== current) mutation.mutate(next);
   };

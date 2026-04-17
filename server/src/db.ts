@@ -203,7 +203,15 @@ export function effectiveInboxStatus(
   return row.inbox_status as InboxStatus;
 }
 
-export function rowToRecording(row: RecordingDbRow, tags: string[] = []): RecordingRow {
+// `now` is optional — list queries thread the same `now` they used for the
+// snooze filter through to `effectiveInboxStatus` so filter results and per-
+// row statuses agree at the snooze-expiry boundary. Callers fetching a single
+// row don't need this coordination and can omit it.
+export function rowToRecording(
+  row: RecordingDbRow,
+  tags: string[] = [],
+  now?: number,
+): RecordingRow {
   return {
     id: row.id,
     filename: row.filename,
@@ -226,7 +234,7 @@ export function rowToRecording(row: RecordingDbRow, tags: string[] = []): Record
     lastError: row.last_error,
     status: statusOf(row),
     inboxStatus: row.inbox_status as InboxStatus,
-    effectiveInboxStatus: effectiveInboxStatus(row),
+    effectiveInboxStatus: effectiveInboxStatus(row, now),
     category: row.category,
     snoozedUntil: row.snoozed_until,
     reviewedAt: row.reviewed_at,

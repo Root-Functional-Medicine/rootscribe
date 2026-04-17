@@ -111,7 +111,17 @@ function RecordingIcon({ isTrash }: { isTrash: boolean }): JSX.Element {
 // filter selection and the Back button works as expected — important for an
 // inbox-zero workflow where users toggle filters frequently.
 function parseFilter(v: string | null): RecordingsListFilter {
-  if (v === "all" || v === "active" || v === "reviewed" || v === "archived" || v === "snoozed") {
+  // Accept every variant of RecordingsListFilter so deep links that use any
+  // server-recognized value restore as expected. Server treats "new" as the
+  // same thing as "active", but URLs can still arrive with either label.
+  if (
+    v === "all" ||
+    v === "active" ||
+    v === "new" ||
+    v === "reviewed" ||
+    v === "archived" ||
+    v === "snoozed"
+  ) {
     return v;
   }
   return "all";

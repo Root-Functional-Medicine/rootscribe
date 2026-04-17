@@ -243,7 +243,10 @@ export function listRecordingRows(opts: ListRecordingsOptions = {}): {
   return {
     total: aggRow?.c ?? 0,
     totalBytes: aggRow?.b ?? 0,
-    items: rows.map((r) => rowToRecording(r, tagMap.get(r.id) ?? [])),
+    // Thread the same `now` we used for the snooze-aware filter clause so the
+    // per-row `effectiveInboxStatus` can't flip to/from "snoozed" between
+    // filter evaluation and row hydration.
+    items: rows.map((r) => rowToRecording(r, tagMap.get(r.id) ?? [], now)),
     availableTags: loadAllTags(),
     availableCategories: loadAllCategories(),
   };

@@ -43,9 +43,14 @@ recordingsRouter.get("/", (req, res) => {
   const limit = Number(req.query.limit ?? 100);
   const offset = Number(req.query.offset ?? 0);
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
-  const tag = typeof req.query.tag === "string" && req.query.tag ? req.query.tag : undefined;
+  // Trim tag/category so leading/trailing whitespace from URL-encoded inputs
+  // (e.g. "?tag=foo%20") doesn't silently produce zero matches.
+  const tag =
+    typeof req.query.tag === "string" && req.query.tag.trim() ? req.query.tag.trim() : undefined;
   const category =
-    typeof req.query.category === "string" && req.query.category ? req.query.category : undefined;
+    typeof req.query.category === "string" && req.query.category.trim()
+      ? req.query.category.trim()
+      : undefined;
   const filter = parseFilter(req.query.filter);
   const result = listRecordingRows({
     limit,
@@ -348,6 +353,8 @@ recordingsRouter.delete("/:id/jira-links/:issueKey", (req, res) => {
     res.status(404).json({ error: "not found" });
     return;
   }
-  removeJiraLink(id, issueKey);
+  // POST uppercases keys before insert, so DELETE must normalize the same
+  // way or case-mismatched URLs will fail to remove the stored row.
+  removeJiraLink(id, issueKey.trim().toUpperCase());
   respondWithDetail(res, id);
 });

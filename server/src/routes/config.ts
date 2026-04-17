@@ -38,6 +38,10 @@ const PatchSchema = z.object({
       port: z.number().int().min(1).max(65535),
     })
     .optional(),
+  // Zod strips unknown keys by default, so fields must be listed here to be
+  // persisted. Jira base URL: require it to look URL-ish but allow both with
+  // and without trailing slash — buildJiraUrl() normalizes either form.
+  jiraBaseUrl: z.string().url().optional(),
 });
 
 configRouter.post("/", (req, res) => {
