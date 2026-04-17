@@ -193,6 +193,9 @@ export function Settings(): JSX.Element {
                 setWebhookUrl(e.target.value);
                 setDirty(true);
                 setTestResult(null);
+                // Clear any prior save error so it doesn't linger after the
+                // user starts correcting the value that caused it.
+                setSaveError(null);
               }}
             />
             <button
@@ -263,6 +266,7 @@ export function Settings(): JSX.Element {
             onChange={(e) => {
               setPollMinutes(Number(e.target.value));
               setDirty(true);
+              setSaveError(null);
             }}
             className="w-full accent-primary"
           />
@@ -302,6 +306,7 @@ export function Settings(): JSX.Element {
               onChange={(e) => {
                 setJiraBaseUrl(e.target.value);
                 setDirty(true);
+                setSaveError(null);
               }}
             />
           </div>
