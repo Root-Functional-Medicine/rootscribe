@@ -39,9 +39,17 @@ function parseFilter(value: unknown): RecordingsListFilter | undefined {
   return undefined;
 }
 
+// Parse query-string numbers defensively — `Number("foo")` is `NaN`, and
+// passing NaN to better-sqlite3's LIMIT/OFFSET bindings blows up at query time.
+function parseFiniteNumberQuery(value: unknown, fallback: number): number {
+  if (typeof value !== "string" && typeof value !== "number") return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 recordingsRouter.get("/", (req, res) => {
-  const limit = Number(req.query.limit ?? 100);
-  const offset = Number(req.query.offset ?? 0);
+  const limit = parseFiniteNumberQuery(req.query.limit, 100);
+  const offset = parseFiniteNumberQuery(req.query.offset, 0);
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
   // Trim tag/category so leading/trailing whitespace from URL-encoded inputs
   // (e.g. "?tag=foo%20") doesn't silently produce zero matches.

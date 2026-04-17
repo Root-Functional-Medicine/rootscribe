@@ -13,27 +13,31 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
 
-  const applyResponse = (response: { recording: RecordingDetail }): void =>
-    applyRecordingMutation(qc, recordingId, response);
-
   const addTag = useMutation({
     mutationFn: (tag: string) => api.addTag(recordingId, tag),
-    onSuccess: applyResponse,
+    onSuccess: (response: { recording: RecordingDetail }) => {
+      applyRecordingMutation(qc, recordingId, response);
+      // Only clear the input after the server confirms — a failed request
+      // (network error, server validation) preserves what the user typed so
+      // they can retry without retyping.
+      setDraft("");
+    },
   });
   const removeTag = useMutation({
     mutationFn: (tag: string) => api.removeTag(recordingId, tag),
-    onSuccess: applyResponse,
+    onSuccess: (response: { recording: RecordingDetail }) =>
+      applyRecordingMutation(qc, recordingId, response),
   });
 
   const commit = (): void => {
     const value = draft.trim();
     if (!value) return;
+    // Already-present: clear draft immediately — no server call needed.
     if (tags.includes(value)) {
       setDraft("");
       return;
     }
     addTag.mutate(value);
-    setDraft("");
   };
 
   const onKey = (e: KeyboardEvent<HTMLInputElement>): void => {
@@ -86,6 +90,11 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
           Add
         </button>
       </div>
+      {addTag.isError && (
+        <p className="text-xs text-error">
+          Couldn't add tag: {addTag.error instanceof Error ? addTag.error.message : "unknown error"}
+        </p>
+      )}
     </div>
   );
 }

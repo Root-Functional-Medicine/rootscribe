@@ -22,6 +22,32 @@ export class ApiError extends Error {
   }
 }
 
+// Normalize assorted server error shapes into a single human-readable string.
+// Handles plain strings, Zod `flatten()` output, and shallow objects with a
+// nested `message` / `error` field.
+function extractErrorMessage(value: unknown): string | null {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (!value || typeof value !== "object") return null;
+  const obj = value as Record<string, unknown>;
+  // Zod flatten(): { formErrors: string[], fieldErrors: Record<string, string[]> }
+  const formErrors = obj["formErrors"];
+  const fieldErrors = obj["fieldErrors"];
+  const parts: string[] = [];
+  if (Array.isArray(formErrors)) {
+    for (const e of formErrors) if (typeof e === "string") parts.push(e);
+  }
+  if (fieldErrors && typeof fieldErrors === "object") {
+    for (const [field, errs] of Object.entries(fieldErrors)) {
+      if (Array.isArray(errs)) {
+        for (const e of errs) if (typeof e === "string") parts.push(`${field}: ${e}`);
+      }
+    }
+  }
+  if (parts.length > 0) return parts.join("; ");
+  const nested = extractErrorMessage(obj["message"]) ?? extractErrorMessage(obj["error"]);
+  return nested;
+}
+
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -32,17 +58,19 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    // Our endpoints return `{ "error": "human-readable message" }` on failure.
-    // Extract that field when the body is JSON so UI toasts/inline errors get
-    // a clean message instead of the raw `{"error":"…"}` string.
+    // Endpoints return `{ error: string }` for plain failures and
+    // `{ error: <object> }` for Zod validation failures (zod's flatten()
+    // shape: { formErrors: string[], fieldErrors: Record<string, string[]> }).
+    // Surface the most useful string we can extract from either shape so the
+    // UI renders a readable message instead of raw JSON.
     const body = await res.text().catch(() => "");
     const contentType = res.headers.get("content-type") ?? "";
     let message = body || `HTTP ${res.status}`;
     if (contentType.includes("application/json") && body) {
       try {
         const parsed = JSON.parse(body) as { error?: unknown; message?: unknown };
-        if (typeof parsed?.error === "string") message = parsed.error;
-        else if (typeof parsed?.message === "string") message = parsed.message;
+        const extracted = extractErrorMessage(parsed.error) ?? extractErrorMessage(parsed.message);
+        if (extracted) message = extracted;
       } catch {
         // Fall back to raw body text if JSON parse fails.
       }

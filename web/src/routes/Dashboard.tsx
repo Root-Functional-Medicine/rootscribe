@@ -133,8 +133,12 @@ export function Dashboard(): JSX.Element {
 
   const [search, setSearch] = useState("");
   const filter = parseFilter(searchParams.get("filter"));
-  const tag = searchParams.get("tag") ?? "";
-  const category = searchParams.get("category") ?? "";
+  // Trim URL params to match server-side behavior (GET /recordings trims
+  // tag/category). Without trimming here, `?tag=%20foo%20` would produce a
+  // cache key / URL with whitespace that the server resolves to "foo" — the
+  // React Query cache would fragment unnecessarily.
+  const tag = (searchParams.get("tag") ?? "").trim();
+  const category = (searchParams.get("category") ?? "").trim();
 
   // Push history entries for tab clicks (so Back/Forward steps through filter
   // states), but replace for per-keystroke text inputs so we don't clutter
@@ -144,7 +148,10 @@ export function Dashboard(): JSX.Element {
     opts: { replace?: boolean } = {},
   ): void => {
     const next = new URLSearchParams(searchParams);
-    for (const [key, value] of Object.entries(patch)) {
+    for (const [key, rawValue] of Object.entries(patch)) {
+      // Treat empty-after-trim as "unset" so stray whitespace from pasted
+      // values doesn't leave a useless param behind.
+      const value = rawValue?.trim() ?? null;
       if (value) next.set(key, value);
       else next.delete(key);
     }

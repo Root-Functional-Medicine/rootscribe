@@ -21,17 +21,21 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
   const jiraBaseUrl = cfg.data?.config.jiraBaseUrl ?? "";
 
-  const applyResponse = (response: { recording: RecordingDetail }): void =>
-    applyRecordingMutation(qc, recordingId, response);
-
   const addLink = useMutation({
     mutationFn: (params: { issueKey: string; issueUrl: string | null }) =>
       api.addJiraLink(recordingId, params),
-    onSuccess: applyResponse,
+    onSuccess: (response: { recording: RecordingDetail }) => {
+      applyRecordingMutation(qc, recordingId, response);
+      // Clear inputs after server confirms the insert. On failure the user
+      // keeps what they typed so they can fix and retry without re-entering.
+      setIssueKey("");
+      setIssueUrl("");
+    },
   });
   const removeLink = useMutation({
     mutationFn: (key: string) => api.removeJiraLink(recordingId, key),
-    onSuccess: applyResponse,
+    onSuccess: (response: { recording: RecordingDetail }) =>
+      applyRecordingMutation(qc, recordingId, response),
   });
 
   const normalized = issueKey.trim().toUpperCase();
@@ -49,6 +53,7 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   const commit = (): void => {
     if (!keyValid) return;
     if (links.some((l) => l.issueKey === normalized)) {
+      // Duplicate — already in the list. Clear inputs locally; no server call.
       setIssueKey("");
       setIssueUrl("");
       return;
@@ -57,8 +62,6 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
       issueKey: normalized,
       issueUrl: resolvedUrl(),
     });
-    setIssueKey("");
-    setIssueUrl("");
   };
 
   return (
@@ -146,6 +149,11 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
         >
           {keyValid ? "Link issue" : issueKey ? "Invalid key (e.g. DEVX-96)" : "Link issue"}
         </button>
+        {addLink.isError && (
+          <p className="text-xs text-error">
+            Couldn't link issue: {addLink.error instanceof Error ? addLink.error.message : "unknown error"}
+          </p>
+        )}
       </div>
     </div>
   );
