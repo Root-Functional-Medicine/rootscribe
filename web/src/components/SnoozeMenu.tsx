@@ -3,7 +3,6 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 interface SnoozeMenuProps {
   onSelect: (snoozedUntil: number) => void;
   onClose: () => void;
-  anchorClassName?: string;
   // Ref to the element that toggles this menu. mousedown inside the anchor
   // is ignored so the toggle button's click handler can fire normally —
   // otherwise the menu would close on mousedown and immediately reopen on
@@ -32,7 +31,6 @@ function defaultCustomDate(): string {
 export function SnoozeMenu({
   onSelect,
   onClose,
-  anchorClassName,
   anchorRef,
 }: SnoozeMenuProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
@@ -81,7 +79,7 @@ export function SnoozeMenu({
   return (
     <div
       ref={ref}
-      className={`absolute z-40 mt-2 w-64 rounded-xl border border-outline-variant/30 bg-surface-container-high shadow-2xl p-3 ${anchorClassName ?? ""}`}
+      className="absolute z-40 mt-2 w-64 rounded-xl border border-outline-variant/30 bg-surface-container-high shadow-2xl p-3"
     >
       <div className="text-[10px] font-label uppercase tracking-widest text-on-surface-variant mb-2 px-1">
         Snooze until…

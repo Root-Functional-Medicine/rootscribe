@@ -23,12 +23,21 @@ export function JiraStep({
 
   // Seed from the existing config value once on first load. Guarded with
   // `initialized` so a React Query refetch (or the user starting to type
-  // before the query resolves) doesn't clobber in-flight edits.
+  // before the query resolves) doesn't clobber in-flight edits. If the
+  // config query errors out, fall back to `DEFAULT_SUGGESTION` so the
+  // wizard doesn't get stuck with a disabled Next button forever.
   useEffect(() => {
-    if (!cfg.data || initialized) return;
-    setUrl(cfg.data.config.jiraBaseUrl ?? DEFAULT_SUGGESTION);
-    setInitialized(true);
-  }, [cfg.data, initialized]);
+    if (initialized) return;
+    if (cfg.data) {
+      setUrl(cfg.data.config.jiraBaseUrl ?? DEFAULT_SUGGESTION);
+      setInitialized(true);
+      return;
+    }
+    if (cfg.isError) {
+      setUrl(DEFAULT_SUGGESTION);
+      setInitialized(true);
+    }
+  }, [cfg.data, cfg.isError, initialized]);
 
   const saveAndContinue = async (): Promise<void> => {
     const trimmed = url.trim() || DEFAULT_SUGGESTION;
