@@ -94,8 +94,14 @@ function migrate(d: Database.Database): void {
   const safeDdl = (sql: string): void => {
     try {
       d.prepare(sql).run();
-    } catch {
-      // already applied (duplicate column / table exists) — ignore
+    } catch (err: unknown) {
+      if (err instanceof Database.SqliteError) {
+        const message = err.message.toLowerCase();
+        if (message.includes("duplicate column name") || message.includes("already exists")) {
+          return;
+        }
+      }
+      throw err;
     }
   };
 

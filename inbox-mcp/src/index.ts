@@ -272,10 +272,16 @@ async function main(): Promise<void> {
   pollTimer = setInterval(() => void emitChannelNudges(), POLL_MS);
 
   const cleanup = (): void => {
-    if (pollTimer) clearInterval(pollTimer);
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    // Explicit exit — `server.connect()` keeps the event loop alive via stdio,
+    // so without this the process hangs after the signal.
+    process.exit(0);
   };
-  process.on("SIGINT", cleanup);
-  process.on("SIGTERM", cleanup);
+  process.once("SIGINT", cleanup);
+  process.once("SIGTERM", cleanup);
 }
 
 main().catch((err) => {

@@ -10,6 +10,9 @@ export function getDb(): Database.Database {
   db = new Database(dbPath(), { fileMustExist: true });
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
+  // Shared DB with the server process — wait up to 5s on contention instead
+  // of failing immediately with SQLITE_BUSY.
+  db.pragma("busy_timeout = 5000");
   return db;
 }
 
@@ -127,7 +130,9 @@ export function readSummaryMarkdown(row: InboxRow): string | null {
 
 export function search(query: string, limit = 25): InboxRow[] {
   const d = getDb();
-  const like = `%${query.replace(/[%_]/g, "\\$&")}%`;
+  // Escape backslash first, then LIKE wildcards, so ESCAPE '\' behaves literally
+  // for every input (including queries that contain a literal backslash).
+  const like = `%${query.replace(/\\/g, "\\\\").replace(/[%_]/g, "\\$&")}%`;
   return d
     .prepare(
       `SELECT ${INBOX_COLS} FROM recordings
