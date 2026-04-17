@@ -121,7 +121,7 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
           className="input text-xs py-1.5"
           placeholder={
             jiraBaseUrl
-              ? `Auto: ${jiraBaseUrl}${normalized || "KEY"}`
+              ? `Auto: ${buildJiraUrl(jiraBaseUrl, normalized || "KEY")}`
               : "https://… (optional)"
           }
           value={issueUrl}

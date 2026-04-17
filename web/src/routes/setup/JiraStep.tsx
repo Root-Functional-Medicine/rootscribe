@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api.js";
 
 const DEFAULT_SUGGESTION = "https://rootfunctionalmedicine.atlassian.net/browse/";
@@ -11,9 +11,12 @@ export function JiraStep({
   onNext: () => void;
   onBack: () => void;
 }): JSX.Element {
+  const qc = useQueryClient();
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
   const [url, setUrl] = useState("");
   const [initialized, setInitialized] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   // Seed from the existing config value once on first load. Guarded with
   // `initialized` so a React Query refetch (or the user starting to type
@@ -26,8 +29,20 @@ export function JiraStep({
 
   const saveAndContinue = async (): Promise<void> => {
     const trimmed = url.trim() || DEFAULT_SUGGESTION;
-    await api.updateConfig({ jiraBaseUrl: trimmed });
-    onNext();
+    setSaveError(null);
+    setSaving(true);
+    try {
+      await api.updateConfig({ jiraBaseUrl: trimmed });
+      // Refresh the shared config cache so downstream steps (Review) and other
+      // mounted components see the new value immediately instead of briefly
+      // showing the stale one.
+      await qc.invalidateQueries({ queryKey: ["config"] });
+      onNext();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Failed to save. Check the URL and try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const useDefault = (): void => {
@@ -110,16 +125,22 @@ export function JiraStep({
           </svg>
           Back
         </button>
-        <button
-          className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10"
-          onClick={() => void saveAndContinue()}
-        >
-          Next
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14" />
-            <path d="M12 5l7 7-7 7" />
-          </svg>
-        </button>
+        <div className="flex flex-col items-end gap-2">
+          {saveError && (
+            <p className="text-xs text-error">{saveError}</p>
+          )}
+          <button
+            className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10 disabled:opacity-60"
+            onClick={() => void saveAndContinue()}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Next"}
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14" />
+              <path d="M12 5l7 7-7 7" />
+            </svg>
+          </button>
+        </div>
       </div>
     </div>
   );

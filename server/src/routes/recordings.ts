@@ -176,7 +176,14 @@ recordingsRouter.patch("/:id/status", (req, res) => {
     res.status(400).json({ error: "status must be one of: new, reviewed, archived" });
     return;
   }
-  const notesArg = typeof notes === "string" ? notes : null;
+  // Match the strictness of /notes and /category: invalid types should 400
+  // instead of silently coercing to null, otherwise clients sending a wrong
+  // type get a no-op they can't distinguish from success.
+  if (notes !== undefined && notes !== null && typeof notes !== "string") {
+    res.status(400).json({ error: "notes must be a string or null" });
+    return;
+  }
+  const notesArg: string | null = typeof notes === "string" ? notes : null;
   const changed = setInboxStatus(id, status as InboxStatus, notesArg);
   if (!changed) {
     // `setInboxStatus` returns changes > 0. A no-op update (recording exists
