@@ -8,27 +8,40 @@ let db: Database.Database | null = null;
 export function getDb(): Database.Database {
   if (db) return db;
   db = new Database(dbPath(), { fileMustExist: true });
+  // Set busy_timeout first so every subsequent PRAGMA and the schema probe
+  // benefits from it — shared DB with the server process can contend during
+  // initialization too, not just queries.
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
-  // Shared DB with the server process — wait up to 5s on contention instead
-  // of failing immediately with SQLITE_BUSY.
-  db.pragma("busy_timeout = 5000");
   assertV4Schema(db);
   return db;
 }
 
 // The server owns migrations (see server/src/db.ts v4 block). If someone
-// connects this MCP to a DB that predates v4, every query will fail with a
+// connects this MCP to a DB that predates v4 — including partially-applied
+// migrations (e.g. server crashed mid-way) — every query will fail with a
 // cryptic "no such column" deep in a tool handler. Fail fast and loud instead.
+const REQUIRED_RECORDING_COLUMNS = [
+  "inbox_status",
+  "inbox_notes",
+  "category",
+  "reviewed_at",
+  "snoozed_until",
+  "channel_notified_at",
+] as const;
+
 function assertV4Schema(d: Database.Database): void {
   const cols = d.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
-  const hasInboxStatus = cols.some((c) => c.name === "inbox_status");
+  const columnNames = new Set(cols.map((c) => c.name));
   const tables = d
     .prepare("SELECT name FROM sqlite_master WHERE type='table'")
     .all() as { name: string }[];
   const tableNames = new Set(tables.map((t) => t.name));
   const missing: string[] = [];
-  if (!hasInboxStatus) missing.push("recordings.inbox_status column");
+  for (const column of REQUIRED_RECORDING_COLUMNS) {
+    if (!columnNames.has(column)) missing.push(`recordings.${column} column`);
+  }
   if (!tableNames.has("recording_tags")) missing.push("recording_tags table");
   if (!tableNames.has("recording_jira_links")) missing.push("recording_jira_links table");
   if (missing.length > 0) {

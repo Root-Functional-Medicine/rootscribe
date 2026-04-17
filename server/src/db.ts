@@ -10,6 +10,10 @@ export function getDb(): Database.Database {
   if (db) return db;
   ensureConfigDir();
   db = new Database(dbPath());
+  // inbox-mcp also writes to this file (tags, jira links, inbox_notes, etc.).
+  // Set busy_timeout first so every subsequent PRAGMA waits on contention
+  // instead of failing immediately with SQLITE_BUSY.
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = ON");
