@@ -10,6 +10,10 @@ export function getDb(): Database.Database {
   if (db) return db;
   ensureConfigDir();
   db = new Database(dbPath());
+  // inbox-mcp also writes to this file (tags, jira links, inbox_notes, etc.).
+  // Set busy_timeout first so every subsequent PRAGMA waits on contention
+  // instead of failing immediately with SQLITE_BUSY.
+  db.pragma("busy_timeout = 5000");
   db.pragma("journal_mode = WAL");
   db.pragma("synchronous = NORMAL");
   db.pragma("foreign_keys = ON");
@@ -88,6 +92,58 @@ function migrate(d: Database.Database): void {
       }
     }
   }
+
+  // v4 (rootscribe): inbox workflow + jira links + tags.
+  // Uses prepare().run() per statement to keep each DDL discrete.
+  const safeDdl = (sql: string): void => {
+    try {
+      d.prepare(sql).run();
+    } catch (err: unknown) {
+      if (err instanceof Database.SqliteError) {
+        const message = err.message.toLowerCase();
+        if (message.includes("duplicate column name") || message.includes("already exists")) {
+          return;
+        }
+      }
+      throw err;
+    }
+  };
+
+  // Wrap the whole v4 DDL block in a single transaction so the inbox-mcp
+  // never sees a partial v4 schema on a crashed/killed server. safeDdl still
+  // tolerates "duplicate column" / "already exists" for re-run idempotency.
+  d.transaction(() => {
+    safeDdl("ALTER TABLE recordings ADD COLUMN inbox_status TEXT NOT NULL DEFAULT 'new'");
+    safeDdl("ALTER TABLE recordings ADD COLUMN inbox_notes TEXT");
+    safeDdl("ALTER TABLE recordings ADD COLUMN reviewed_at INTEGER");
+    safeDdl("ALTER TABLE recordings ADD COLUMN category TEXT");
+    safeDdl("ALTER TABLE recordings ADD COLUMN snoozed_until INTEGER");
+    safeDdl("ALTER TABLE recordings ADD COLUMN channel_notified_at INTEGER");
+
+    d.prepare("CREATE INDEX IF NOT EXISTS idx_recordings_inbox_status ON recordings(inbox_status, start_time DESC)").run();
+
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS recording_jira_links (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        recording_id  TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+        issue_key     TEXT NOT NULL,
+        issue_url     TEXT,
+        relation      TEXT NOT NULL DEFAULT 'created_from',
+        created_at    INTEGER NOT NULL,
+        UNIQUE(recording_id, issue_key)
+      )
+    `).run();
+    d.prepare("CREATE INDEX IF NOT EXISTS idx_jira_links_recording ON recording_jira_links(recording_id)").run();
+
+    d.prepare(`
+      CREATE TABLE IF NOT EXISTS recording_tags (
+        recording_id  TEXT NOT NULL REFERENCES recordings(id) ON DELETE CASCADE,
+        tag           TEXT NOT NULL,
+        PRIMARY KEY (recording_id, tag)
+      )
+    `).run();
+    d.prepare("CREATE INDEX IF NOT EXISTS idx_tags_tag ON recording_tags(tag)").run();
+  })();
 }
 
 interface RecordingDbRow {
@@ -112,6 +168,12 @@ interface RecordingDbRow {
   last_error: string | null;
   metadata_json: string | null;
   transcript_text: string | null;
+  inbox_status: string;
+  inbox_notes: string | null;
+  reviewed_at: number | null;
+  category: string | null;
+  snoozed_until: number | null;
+  channel_notified_at: number | null;
 }
 
 function statusOf(row: RecordingDbRow): RecordingStatus {
