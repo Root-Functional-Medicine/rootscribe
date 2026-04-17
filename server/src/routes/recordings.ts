@@ -145,10 +145,11 @@ function readRecordingDetail(
     inboxNotes: rel.inboxNotes,
     jiraLinks: rel.jiraLinks,
   };
-  // encodeURIComponent (not encodeURI) — folder names may contain characters
-  // like `#` that encodeURI leaves untouched, which would start a URL fragment
-  // and never reach the /media route.
-  return { detail, mediaBase: `/media/${encodeURIComponent(rel.row.folder)}` };
+  // Encode per-segment so `#`/`?` in folder names don't break the URL, but
+  // `/` separators stay intact (otherwise `%2F` would produce an opaque
+  // single-segment path that the /media route can't match).
+  const mediaBase = `/media/${rel.row.folder.split("/").map(encodeURIComponent).join("/")}`;
+  return { detail, mediaBase };
 }
 
 recordingsRouter.get("/:id", (req, res) => {
@@ -221,18 +222,20 @@ recordingsRouter.patch("/:id/status", (req, res) => {
     res.status(400).json({ error: "status must be one of: new, reviewed, archived" });
     return;
   }
-  // Notes on this endpoint are optional and merge-only: pass a string to
-  // overwrite inbox_notes during the transition, or omit the field to leave
-  // the existing value alone (the reviewed branch uses COALESCE). To
-  // explicitly clear notes, clients use PATCH /notes with `null` — that's
-  // the only route where the "clear" semantics exist.
+  // Notes on this endpoint are optional and merge-only: pass a non-empty
+  // string to overwrite inbox_notes during the transition, or omit the field
+  // to leave the existing value alone (the reviewed branch uses COALESCE).
+  // Empty/whitespace-only strings normalize to "absent" — otherwise COALESCE
+  // sees the empty string as non-null and would clear notes, bypassing the
+  // explicit "use PATCH /notes to clear" contract.
   if (notes !== undefined && typeof notes !== "string") {
     res.status(400).json({
       error: "notes must be a string if provided (use PATCH /notes to clear notes)",
     });
     return;
   }
-  const notesArg: string | null = typeof notes === "string" ? notes : null;
+  const notesArg: string | null =
+    typeof notes === "string" && notes.trim() !== "" ? notes : null;
   const changed = setInboxStatus(id, status as InboxStatus, notesArg);
   if (!changed) {
     // `setInboxStatus` returns changes > 0. A no-op update (recording exists

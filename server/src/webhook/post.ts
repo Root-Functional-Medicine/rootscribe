@@ -7,6 +7,14 @@ import { logger } from "../logger.js";
 
 const BACKOFF_MS = [5_000, 30_000, 120_000];
 
+// Encode a `/`-separated folder path per-segment so `#`, `?`, and other
+// reserved chars get escaped but the `/` separators stay intact. Webhook
+// consumers (and the browser route cache) expect path-like URLs, not
+// `%2F`-mangled opaque strings.
+function encodeFolderPath(folder: string): string {
+  return folder.split("/").map(encodeURIComponent).join("/");
+}
+
 function readIfExists(absPath: string): string | null {
   try {
     if (!existsSync(absPath)) return null;
@@ -20,9 +28,7 @@ function readIfExists(absPath: string): string | null {
 function buildPayload(event: WebhookEvent, row: RecordingRow): WebhookPayload {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
-  // See routes/recordings.ts readRecordingDetail — encodeURIComponent so folder
-  // names containing `#`/`?` don't truncate the URL at a fragment/query.
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURIComponent(row.folder)}`;
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeFolderPath(row.folder)}`;
   const payload: WebhookPayload = {
     event,
     recording: {
@@ -138,7 +144,7 @@ function buildTestPayload(): WebhookPayload & { test: true } {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
   const folder = "2026/04/11/sample-recording";
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURIComponent(folder)}`;
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeFolderPath(folder)}`;
   const now = Date.now();
   return {
     test: true,

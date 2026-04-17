@@ -50,18 +50,17 @@ export function Settings(): JSX.Element {
     setSaving(true);
     setSaveError(null);
     try {
-      // Omit jiraBaseUrl from the patch when blank — the server's Zod
-      // `.url()` validator rejects empty strings, which would break Save
-      // even if the user only edited other fields. The existing value is
-      // preserved; clearing to "unset" isn't supported (the default URL is
-      // always safe to keep).
-      const trimmedJira = jiraBaseUrl.trim();
+      // Blank Jira URL field = reset to default. Previously we omitted the
+      // field, but that made the UI reset to the stored value after save and
+      // made "clear" look broken. Sending DEFAULT_CONFIG.jiraBaseUrl keeps
+      // the field in a valid state while respecting the clear gesture.
+      const trimmedJira = jiraBaseUrl.trim() || DEFAULT_CONFIG.jiraBaseUrl;
       await api.updateConfig({
         webhook: webhookUrl.trim()
           ? { url: webhookUrl.trim(), enabled: true }
           : null,
         pollIntervalMinutes: pollMinutes,
-        ...(trimmedJira ? { jiraBaseUrl: trimmedJira } : {}),
+        jiraBaseUrl: trimmedJira,
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);
