@@ -41,13 +41,10 @@ export function InboxFilters({
         aria-label="Filter by inbox status"
       >
         {FILTER_TABS.map((t) => {
-          // "new" and "active" resolve to the same server-side query; treat
-          // them as equivalent for tab highlighting so ?filter=new deep links
-          // still show the Active tab as selected.
+          // The Active tab also highlights for ?filter=new deep links — the
+          // server treats them equivalently and no "new" tab exists here.
           const active =
-            filter === t.value ||
-            (t.value === "active" && filter === "new") ||
-            (t.value === "new" && filter === "active");
+            filter === t.value || (t.value === "active" && filter === "new");
           return (
             <button
               key={t.value}

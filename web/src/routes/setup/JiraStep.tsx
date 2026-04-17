@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_CONFIG } from "@applaud/shared";
 import { api } from "../../api.js";
 
-const DEFAULT_SUGGESTION = "https://rootfunctionalmedicine.atlassian.net/browse/";
+// Single source of truth — if the RFM URL changes, update DEFAULT_CONFIG in
+// shared/src/config.ts and this preview/fallback stays in sync automatically.
+const DEFAULT_SUGGESTION = DEFAULT_CONFIG.jiraBaseUrl;
 
 export function JiraStep({
   onNext,

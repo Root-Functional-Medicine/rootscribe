@@ -67,42 +67,48 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
         {links.length === 0 && (
           <span className="text-xs text-on-surface-variant italic">No linked issues</span>
         )}
-        {links.map((l) => (
-          <div
-            key={l.id}
-            className="flex items-center justify-between gap-2 rounded-lg bg-surface-container-highest px-2.5 py-1.5 text-xs"
-          >
-            {l.issueUrl ? (
-              <a
-                href={l.issueUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-primary hover:underline font-mono font-semibold"
-              >
-                {l.issueKey}
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                  <polyline points="15 3 21 3 21 9" />
-                  <line x1="10" y1="14" x2="21" y2="3" />
-                </svg>
-              </a>
-            ) : (
-              <span className="font-mono font-semibold text-on-surface">{l.issueKey}</span>
-            )}
-            <button
-              onClick={() => removeLink.mutate(l.issueKey)}
-              disabled={removeLink.isPending}
-              className="inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
-              title={`Unlink ${l.issueKey}`}
-              aria-label={`Unlink ${l.issueKey}`}
+        {links.map((l) => {
+          // Fall back to building the URL from the configured base when the
+          // link was stored without an explicit URL (older rows, or rows added
+          // before the config query resolved).
+          const href = l.issueUrl ?? (jiraBaseUrl ? buildJiraUrl(jiraBaseUrl, l.issueKey) : null);
+          return (
+            <div
+              key={l.id}
+              className="flex items-center justify-between gap-2 rounded-lg bg-surface-container-highest px-2.5 py-1.5 text-xs"
             >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
-          </div>
-        ))}
+              {href ? (
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 text-primary hover:underline font-mono font-semibold"
+                >
+                  {l.issueKey}
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                    <polyline points="15 3 21 3 21 9" />
+                    <line x1="10" y1="14" x2="21" y2="3" />
+                  </svg>
+                </a>
+              ) : (
+                <span className="font-mono font-semibold text-on-surface">{l.issueKey}</span>
+              )}
+              <button
+                onClick={() => removeLink.mutate(l.issueKey)}
+                disabled={removeLink.isPending}
+                className="inline-flex h-5 w-5 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
+                title={`Unlink ${l.issueKey}`}
+                aria-label={`Unlink ${l.issueKey}`}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+          );
+        })}
       </div>
       <div className="space-y-1.5">
         <input
