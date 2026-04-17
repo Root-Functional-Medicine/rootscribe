@@ -39,9 +39,22 @@ const PatchSchema = z.object({
     })
     .optional(),
   // Zod strips unknown keys by default, so fields must be listed here to be
-  // persisted. Jira base URL: require it to look URL-ish but allow both with
-  // and without trailing slash — buildJiraUrl() normalizes either form.
-  jiraBaseUrl: z.string().url().optional(),
+  // persisted. Jira base URL: require an http/https URL — `z.string().url()`
+  // alone accepts `javascript:` / `data:` etc., and this value is later used
+  // to build <a href>s via buildJiraUrl(), so non-web schemes would become an
+  // XSS / navigation vector.
+  jiraBaseUrl: z
+    .string()
+    .url()
+    .refine((value) => {
+      try {
+        const proto = new URL(value).protocol;
+        return proto === "http:" || proto === "https:";
+      } catch {
+        return false;
+      }
+    }, "jiraBaseUrl must use http or https")
+    .optional(),
 });
 
 configRouter.post("/", (req, res) => {
