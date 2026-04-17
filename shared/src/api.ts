@@ -76,7 +76,10 @@ export interface RecordingDetailResponse {
 // same contract at compile time — drift here would only be caught at runtime.
 export interface InboxStatusPatchRequest {
   status: InboxStatus;
-  notes?: string | null;
+  // Optional merge-only notes. Clients clear notes via InboxNotesPatchRequest,
+  // which accepts explicit null — keeping the "clear" semantics on a single
+  // endpoint means the /status route can reject null here without ambiguity.
+  notes?: string;
 }
 
 export interface InboxSnoozePatchRequest {

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_CONFIG } from "@applaud/shared";
 import { api } from "../api.js";
 
 function formatRelative(ts: number | null): string {
@@ -290,7 +291,7 @@ export function Settings(): JSX.Element {
             <input
               className="input py-3 border-transparent font-mono text-sm"
               type="url"
-              placeholder="https://rootfunctionalmedicine.atlassian.net/browse/"
+              placeholder={DEFAULT_CONFIG.jiraBaseUrl}
               value={jiraBaseUrl}
               onChange={(e) => {
                 setJiraBaseUrl(e.target.value);

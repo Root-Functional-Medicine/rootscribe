@@ -158,18 +158,22 @@ export function Dashboard(): JSX.Element {
     setSearchParams(next, { replace: opts.replace ?? false });
   };
 
+  // Trim the search input before building the params so whitespace-only
+  // queries don't fragment the cache key or get sent over the wire — the
+  // server trims on its side, so aligning here keeps behavior predictable.
+  const trimmedSearch = search.trim();
   const listParams = useMemo(
     () => ({
       limit: 200,
       // Dashboard is the only surface that needs the tag/category autocomplete
       // data, so only this query pays for the DISTINCT scans.
       facets: true,
-      ...(search ? { search } : {}),
+      ...(trimmedSearch ? { search: trimmedSearch } : {}),
       ...(filter !== "all" ? { filter } : {}),
       ...(tag ? { tag } : {}),
       ...(category ? { category } : {}),
     }),
-    [search, filter, tag, category],
+    [trimmedSearch, filter, tag, category],
   );
 
   const list = useQuery({
@@ -261,12 +265,12 @@ export function Dashboard(): JSX.Element {
       {list.data && list.data.items.length === 0 && (
         <div className="card flex flex-col items-center justify-center p-12 text-center">
           <p className="text-on-surface">
-            {filter !== "all" || tag || category || search
+            {filter !== "all" || tag || category || trimmedSearch
               ? "No recordings match these filters."
               : "No recordings yet."}
           </p>
           <p className="mt-1 text-sm text-on-surface-variant">
-            {filter !== "all" || tag || category || search
+            {filter !== "all" || tag || category || trimmedSearch
               ? "Try clearing a filter or switching to the All view."
               : (
                 <>
