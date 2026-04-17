@@ -303,16 +303,19 @@ export function getJiraLinks(recordingId: string): JiraLinkRow[] {
 
 export function unnotifiedNew(): Pick<InboxRow, "id" | "filename" | "duration_ms">[] {
   const d = getDb();
+  // Must mirror listNew()'s snooze filter — otherwise we nudge the user about
+  // recordings they explicitly snoozed, which defeats the purpose of snooze.
   return d
     .prepare(
       `SELECT id, filename, duration_ms FROM recordings
        WHERE inbox_status = 'new'
          AND transcript_downloaded_at IS NOT NULL
          AND channel_notified_at IS NULL
+         AND (snoozed_until IS NULL OR snoozed_until <= ?)
        ORDER BY start_time DESC
        LIMIT 50`,
     )
-    .all() as Pick<InboxRow, "id" | "filename" | "duration_ms">[];
+    .all(Date.now()) as Pick<InboxRow, "id" | "filename" | "duration_ms">[];
 }
 
 export function markNotified(recordingId: string): void {
