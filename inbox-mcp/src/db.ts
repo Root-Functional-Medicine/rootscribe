@@ -98,7 +98,7 @@ export function listNew(params: { limit?: number; category?: string; tag?: strin
         `SELECT ${INBOX_COLS} FROM recordings r
          WHERE r.inbox_status = 'new'
            AND r.transcript_downloaded_at IS NOT NULL
-           AND (r.snoozed_until IS NULL OR r.snoozed_until < ?)
+           AND (r.snoozed_until IS NULL OR r.snoozed_until <= ?)
            AND (? IS NULL OR r.category = ?)
            AND EXISTS (SELECT 1 FROM recording_tags t WHERE t.recording_id = r.id AND t.tag = ?)
          ORDER BY r.start_time DESC
