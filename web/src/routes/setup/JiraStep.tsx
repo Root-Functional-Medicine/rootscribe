@@ -32,7 +32,10 @@ export function JiraStep({
     setUrl(DEFAULT_SUGGESTION);
   };
 
-  const preview = url.trim().replace(/\/+$/, "") + "/DEVX-96";
+  // Fall back to DEFAULT_SUGGESTION when the input is empty so the preview
+  // is always a valid URL — without the fallback, an empty input renders as
+  // just "/DEVX-96", which looks broken.
+  const preview = (url.trim() || DEFAULT_SUGGESTION).replace(/\/+$/, "") + "/DEVX-96";
 
   return (
     <div className="space-y-8">

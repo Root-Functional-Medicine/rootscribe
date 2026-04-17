@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 
 interface SnoozeMenuProps {
   onSelect: (snoozedUntil: number) => void;
   onClose: () => void;
   anchorClassName?: string;
+  // Ref to the element that toggles this menu. mousedown inside the anchor
+  // is ignored so the toggle button's click handler can fire normally —
+  // otherwise the menu would close on mousedown and immediately reopen on
+  // the click handler that runs right after.
+  anchorRef?: RefObject<HTMLElement | null>;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -24,20 +29,38 @@ function defaultCustomDate(): string {
   return `${y}-${m}-${day}`;
 }
 
-export function SnoozeMenu({ onSelect, onClose, anchorClassName }: SnoozeMenuProps): JSX.Element {
+export function SnoozeMenu({
+  onSelect,
+  onClose,
+  anchorClassName,
+  anchorRef,
+}: SnoozeMenuProps): JSX.Element {
   const ref = useRef<HTMLDivElement>(null);
   const [customMode, setCustomMode] = useState(false);
   const [customDate, setCustomDate] = useState(defaultCustomDate());
 
   // Click-outside closes the menu. Use mousedown so the menu closes before the
-  // click lands on a sibling element (prevents a double-click feel).
+  // click lands on a sibling element (prevents a double-click feel), but skip
+  // the anchor — the toggle button needs to handle its own click without the
+  // menu having already closed state mid-event and reopening.
   useEffect(() => {
-    const handler = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    const handleMouseDown = (e: MouseEvent): void => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (ref.current?.contains(target)) return;
+      if (anchorRef?.current?.contains(target)) return;
+      onClose();
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [onClose]);
+    const handleKeyDown = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", handleMouseDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleMouseDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [onClose, anchorRef]);
 
   const pickPreset = (offsetMs: number): void => {
     onSelect(Date.now() + offsetMs);

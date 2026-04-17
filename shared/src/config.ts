@@ -22,8 +22,9 @@ export interface AppConfig {
   bind: BindConfig;
   lanToken: string | null;
   // Base URL for auto-constructing Jira issue links. When a recording has a
-  // Jira issue key but no explicit URL, the UI builds `${jiraBaseUrl}${key}`.
-  // Trailing slash is expected — see helpers in shared/src/jira.ts.
+  // Jira issue key but no explicit URL, the UI builds the full URL via
+  // buildJiraUrl(baseUrl, key) — trailing slashes on either side are
+  // normalized, so users can store it with or without one.
   jiraBaseUrl: string;
 }
 

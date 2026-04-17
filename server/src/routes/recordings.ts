@@ -20,6 +20,7 @@ import type {
   InboxStatus,
   RecordingsListFilter,
 } from "@applaud/shared";
+import { isValidJiraKey } from "@applaud/shared";
 
 export const recordingsRouter = Router();
 
@@ -173,8 +174,14 @@ recordingsRouter.patch("/:id/status", (req, res) => {
   const notesArg = typeof notes === "string" ? notes : null;
   const changed = setInboxStatus(id, status as InboxStatus, notesArg);
   if (!changed) {
-    res.status(404).json({ error: "not found" });
-    return;
+    // `setInboxStatus` returns changes > 0. A no-op update (recording exists
+    // but is already in the requested status — common for idempotent clients
+    // or double-click) would otherwise surface as 404, so we disambiguate.
+    const exists = getRecordingWithRelations(id);
+    if (!exists) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
   }
   respondWithDetail(res, id);
 });
@@ -299,6 +306,14 @@ recordingsRouter.post("/:id/jira-links", (req, res) => {
     res.status(400).json({ error: "issueKey must be a non-empty string" });
     return;
   }
+  const normalizedKey = issueKey.trim().toUpperCase();
+  // DB schema doesn't enforce a key pattern, so the server validates here
+  // using the same helper the client uses — otherwise a malformed key could
+  // persist and break the "key → URL" assumption in the UI.
+  if (!isValidJiraKey(normalizedKey)) {
+    res.status(400).json({ error: "issueKey must be a valid Jira key (e.g. DEVX-96)" });
+    return;
+  }
   if (issueUrl !== undefined && issueUrl !== null && typeof issueUrl !== "string") {
     res.status(400).json({ error: "issueUrl must be a string or null" });
     return;
@@ -314,7 +329,7 @@ recordingsRouter.post("/:id/jira-links", (req, res) => {
   }
   addJiraLink({
     recordingId: id,
-    issueKey: issueKey.trim(),
+    issueKey: normalizedKey,
     issueUrl: typeof issueUrl === "string" && issueUrl.trim() ? issueUrl.trim() : null,
     relation: (relation as string) || "created_from",
   });

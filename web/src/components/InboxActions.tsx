@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RecordingDetail, InboxStatus } from "@applaud/shared";
 import { api } from "../api.js";
@@ -15,6 +15,7 @@ interface InboxActionsProps {
 export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
   const qc = useQueryClient();
   const [snoozeOpen, setSnoozeOpen] = useState(false);
+  const snoozeToggleRef = useRef<HTMLButtonElement>(null);
 
   const invalidate = async (): Promise<void> => {
     await qc.invalidateQueries({ queryKey: ["recording", recording.id] });
@@ -67,6 +68,7 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
       ) : effStatus === "new" ? (
         <div className="relative">
           <button
+            ref={snoozeToggleRef}
             onClick={() => setSnoozeOpen((v) => !v)}
             disabled={busy}
             className="btn-secondary text-sm disabled:opacity-50"
@@ -81,6 +83,7 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
           </button>
           {snoozeOpen && (
             <SnoozeMenu
+              anchorRef={snoozeToggleRef}
               onSelect={(until) => setSnooze.mutate(until)}
               onClose={() => setSnoozeOpen(false)}
             />

@@ -126,13 +126,19 @@ export function Dashboard(): JSX.Element {
   const tag = searchParams.get("tag") ?? "";
   const category = searchParams.get("category") ?? "";
 
-  const updateParams = (patch: Record<string, string | null>): void => {
+  // Push history entries for tab clicks (so Back/Forward steps through filter
+  // states), but replace for per-keystroke text inputs so we don't clutter
+  // history with every character typed into tag/category fields.
+  const updateParams = (
+    patch: Record<string, string | null>,
+    opts: { replace?: boolean } = {},
+  ): void => {
     const next = new URLSearchParams(searchParams);
     for (const [key, value] of Object.entries(patch)) {
       if (value) next.set(key, value);
       else next.delete(key);
     }
-    setSearchParams(next, { replace: true });
+    setSearchParams(next, { replace: opts.replace ?? false });
   };
 
   const listParams = useMemo(
@@ -172,7 +178,7 @@ export function Dashboard(): JSX.Element {
             Recordings
           </h1>
           <p className="text-on-surface-variant font-label text-sm tracking-wide uppercase">
-            {list.data?.total ?? "…"} items shown
+            {list.data?.total ?? "…"} matching
             {list.data?.totalBytes != null && (
               <>
                 <span className="mx-2 text-outline-variant opacity-40">|</span>
@@ -219,9 +225,9 @@ export function Dashboard(): JSX.Element {
           filter={filter}
           onFilterChange={(f) => updateParams({ filter: f === "all" ? null : f })}
           tag={tag}
-          onTagChange={(t) => updateParams({ tag: t || null })}
+          onTagChange={(t) => updateParams({ tag: t || null }, { replace: true })}
           category={category}
-          onCategoryChange={(c) => updateParams({ category: c || null })}
+          onCategoryChange={(c) => updateParams({ category: c || null }, { replace: true })}
           availableTags={list.data?.availableTags ?? []}
           availableCategories={list.data?.availableCategories ?? []}
         />
