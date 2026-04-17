@@ -74,13 +74,23 @@ export interface RecordingDetailResponse {
 
 // Inbox mutation payloads. Kept in shared so the web client and server use the
 // same contract at compile time — drift here would only be caught at runtime.
-export interface InboxStatusPatchRequest {
-  status: InboxStatus;
-  // Optional merge-only notes. Clients clear notes via InboxNotesPatchRequest,
-  // which accepts explicit null — keeping the "clear" semantics on a single
-  // endpoint means the /status route can reject null here without ambiguity.
-  notes?: string;
-}
+//
+// `notes` is only valid for the `reviewed` transition (the route rejects it
+// on other statuses since `setInboxStatus` only merges notes into
+// inbox_notes during the reviewed branch). Discriminated union encodes that
+// at the type level so clients can't pass notes with `new`/`archived`.
+export type InboxStatusPatchRequest =
+  | {
+      status: "reviewed";
+      // Optional merge-only notes. Clients clear notes via
+      // InboxNotesPatchRequest (which accepts explicit null) — keeping the
+      // "clear" semantics on a single endpoint means /status rejects null.
+      notes?: string;
+    }
+  | {
+      status: Exclude<InboxStatus, "reviewed">;
+      notes?: never;
+    };
 
 export interface InboxSnoozePatchRequest {
   // Epoch ms. Null clears the snooze (equivalent to unsnooze).

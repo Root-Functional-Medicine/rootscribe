@@ -219,15 +219,21 @@ recordingsRouter.patch("/:id/status", (req, res) => {
     res.status(400).json({ error: "status must be one of: new, reviewed, archived" });
     return;
   }
-  // Notes on this endpoint are optional and merge-only: pass a non-empty
-  // string to overwrite inbox_notes during the transition, or omit the field
-  // to leave the existing value alone (the reviewed branch uses COALESCE).
-  // Empty/whitespace-only strings normalize to "absent" — otherwise COALESCE
-  // sees the empty string as non-null and would clear notes, bypassing the
-  // explicit "use PATCH /notes to clear" contract.
+  // Notes on this endpoint are only meaningful for the `reviewed` transition
+  // — `setInboxStatus` ignores them for `new`/`archived`. Reject notes on
+  // other transitions rather than silently dropping them, so the wire
+  // contract matches the runtime behavior. Empty/whitespace-only strings
+  // normalize to "absent" (otherwise COALESCE would see "" as non-null and
+  // bypass the "use PATCH /notes to clear" rule).
   if (notes !== undefined && typeof notes !== "string") {
     res.status(400).json({
       error: "notes must be a string if provided (use PATCH /notes to clear notes)",
+    });
+    return;
+  }
+  if (notes !== undefined && status !== "reviewed") {
+    res.status(400).json({
+      error: "notes may only be provided when status is 'reviewed'",
     });
     return;
   }
