@@ -39,6 +39,21 @@ export type RecordingStatus =
   | "error"
   | "historical";
 
+export type InboxStatus = "new" | "reviewed" | "archived";
+
+// "snoozed" is virtual: persisted inbox_status='new' with snoozed_until > now.
+// Server computes it and exposes it alongside the raw inboxStatus so the client
+// does not have to recompute (and drift from) the same clock.
+export type EffectiveInboxStatus = InboxStatus | "snoozed";
+
+export interface JiraLink {
+  id: number;
+  issueKey: string;
+  issueUrl: string | null;
+  relation: string;
+  createdAt: number;
+}
+
 export interface RecordingRow {
   id: string;
   filename: string;
@@ -60,12 +75,20 @@ export interface RecordingRow {
   isHistorical: boolean;
   lastError: string | null;
   status: RecordingStatus;
+  inboxStatus: InboxStatus;
+  effectiveInboxStatus: EffectiveInboxStatus;
+  category: string | null;
+  snoozedUntil: number | null;
+  reviewedAt: number | null;
+  tags: string[];
 }
 
 export interface RecordingDetail extends RecordingRow {
   transcriptText: string | null;
   summaryMarkdown: string | null;
   metadata: Record<string, unknown> | null;
+  inboxNotes: string | null;
+  jiraLinks: JiraLink[];
 }
 
 export type SyncEventType =

@@ -3,21 +3,104 @@ import { readFileSync, existsSync, rmSync } from "node:fs";
 import path from "node:path";
 import {
   listRecordingRows,
-  getRecordingById,
+  getRecordingWithRelations,
   deleteRecording,
+  setInboxStatus,
+  setSnoozedUntil,
+  setCategory,
+  setInboxNotes,
+  addRecordingTag,
+  removeRecordingTag,
+  addJiraLink,
+  removeJiraLink,
 } from "../sync/state.js";
 import { loadConfig } from "../config.js";
-import type { RecordingDetail } from "@applaud/shared";
+import type {
+  RecordingDetail,
+  InboxStatus,
+  RecordingsListFilter,
+} from "@applaud/shared";
 
 export const recordingsRouter = Router();
+
+function parseFilter(value: unknown): RecordingsListFilter | undefined {
+  if (typeof value !== "string") return undefined;
+  if (
+    value === "all" ||
+    value === "active" ||
+    value === "new" ||
+    value === "reviewed" ||
+    value === "archived" ||
+    value === "snoozed"
+  ) {
+    return value;
+  }
+  return undefined;
+}
 
 recordingsRouter.get("/", (req, res) => {
   const limit = Number(req.query.limit ?? 100);
   const offset = Number(req.query.offset ?? 0);
   const search = typeof req.query.search === "string" ? req.query.search : undefined;
-  const result = listRecordingRows({ limit, offset, ...(search ? { search } : {}) });
+  const tag = typeof req.query.tag === "string" && req.query.tag ? req.query.tag : undefined;
+  const category =
+    typeof req.query.category === "string" && req.query.category ? req.query.category : undefined;
+  const filter = parseFilter(req.query.filter);
+  const result = listRecordingRows({
+    limit,
+    offset,
+    ...(search ? { search } : {}),
+    ...(filter ? { filter } : {}),
+    ...(tag ? { tag } : {}),
+    ...(category ? { category } : {}),
+  });
   res.json(result);
 });
+
+// Build the full RecordingDetail from DB + on-disk transcript/summary/metadata.
+// Extracted so mutation endpoints can reuse it without duplicating the IO.
+function readRecordingDetail(id: string): { detail: RecordingDetail; mediaBase: string } | null {
+  const rel = getRecordingWithRelations(id);
+  if (!rel) return null;
+  const cfg = loadConfig();
+
+  let transcriptText: string | null = null;
+  let summaryMarkdown: string | null = null;
+  let metadata: Record<string, unknown> | null = null;
+
+  try {
+    if (rel.row.transcriptPath) {
+      const txtPath = path.join(path.dirname(rel.row.transcriptPath), "transcript.txt");
+      if (existsSync(txtPath)) transcriptText = readFileSync(txtPath, "utf8");
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (rel.row.summaryPath && existsSync(rel.row.summaryPath)) {
+      summaryMarkdown = readFileSync(rel.row.summaryPath, "utf8");
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (rel.row.metadataPath && existsSync(rel.row.metadataPath)) {
+      metadata = JSON.parse(readFileSync(rel.row.metadataPath, "utf8")) as Record<string, unknown>;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  const detail: RecordingDetail = {
+    ...rel.row,
+    transcriptText,
+    summaryMarkdown,
+    metadata,
+    inboxNotes: rel.inboxNotes,
+    jiraLinks: rel.jiraLinks,
+  };
+  return { detail, mediaBase: `/media/${encodeURI(rel.row.folder)}` };
+}
 
 recordingsRouter.get("/:id", (req, res) => {
   const id = req.params.id;
@@ -25,48 +108,17 @@ recordingsRouter.get("/:id", (req, res) => {
     res.status(400).json({ error: "missing id" });
     return;
   }
-  const row = getRecordingById(id);
-  if (!row) {
+  const full = readRecordingDetail(id);
+  if (!full) {
     res.status(404).json({ error: "not found" });
     return;
   }
   const cfg = loadConfig();
-  const base = cfg.recordingsDir ?? "";
-
-  let transcriptText: string | null = null;
-  let summaryMarkdown: string | null = null;
-  let metadata: Record<string, unknown> | null = null;
-
-  try {
-    if (row.transcriptPath) {
-      const txtPath = path.join(path.dirname(row.transcriptPath), "transcript.txt");
-      if (existsSync(txtPath)) transcriptText = readFileSync(txtPath, "utf8");
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (row.summaryPath && existsSync(row.summaryPath)) {
-      summaryMarkdown = readFileSync(row.summaryPath, "utf8");
-    }
-  } catch {
-    /* ignore */
-  }
-  try {
-    if (row.metadataPath && existsSync(row.metadataPath)) {
-      metadata = JSON.parse(readFileSync(row.metadataPath, "utf8")) as Record<string, unknown>;
-    }
-  } catch {
-    /* ignore */
-  }
-
-  const detail: RecordingDetail = {
-    ...row,
-    transcriptText,
-    summaryMarkdown,
-    metadata,
-  };
-  res.json({ recording: detail, mediaBase: `/media/${encodeURI(row.folder)}`, recordingsDir: base });
+  res.json({
+    recording: full.detail,
+    mediaBase: full.mediaBase,
+    recordingsDir: cfg.recordingsDir ?? "",
+  });
 });
 
 recordingsRouter.delete("/:id", (req, res) => {
@@ -75,14 +127,14 @@ recordingsRouter.delete("/:id", (req, res) => {
     res.status(400).json({ error: "missing id" });
     return;
   }
-  const row = getRecordingById(id);
-  if (!row) {
+  const rel = getRecordingWithRelations(id);
+  if (!rel) {
     res.status(404).json({ error: "not found" });
     return;
   }
   const cfg = loadConfig();
   if (cfg.recordingsDir) {
-    const folder = path.join(cfg.recordingsDir, row.folder);
+    const folder = path.join(cfg.recordingsDir, rel.row.folder);
     try {
       rmSync(folder, { recursive: true, force: true });
     } catch {
@@ -91,4 +143,196 @@ recordingsRouter.delete("/:id", (req, res) => {
   }
   deleteRecording(id);
   res.json({ ok: true });
+});
+
+// --- Inbox workflow mutations ---
+// Each returns the updated RecordingDetail so the client can patch its cache
+// without a second fetch. 404 if the recording doesn't exist; 409 if the state
+// transition is invalid (e.g. snoozing a non-'new' recording).
+
+function respondWithDetail(res: import("express").Response, id: string): void {
+  const full = readRecordingDetail(id);
+  if (!full) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  res.json({ recording: full.detail });
+}
+
+recordingsRouter.patch("/:id/status", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const { status, notes } = req.body ?? {};
+  if (status !== "new" && status !== "reviewed" && status !== "archived") {
+    res.status(400).json({ error: "status must be one of: new, reviewed, archived" });
+    return;
+  }
+  const notesArg = typeof notes === "string" ? notes : null;
+  const changed = setInboxStatus(id, status as InboxStatus, notesArg);
+  if (!changed) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.patch("/:id/snooze", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const raw = req.body?.snoozedUntil;
+  let until: number | null;
+  if (raw === null || raw === undefined) {
+    until = null;
+  } else if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+    until = raw;
+  } else {
+    res.status(400).json({ error: "snoozedUntil must be a positive epoch-ms number or null" });
+    return;
+  }
+  const changed = setSnoozedUntil(id, until);
+  if (!changed) {
+    // Either not found or not in 'new' status — check which.
+    const rel = getRecordingWithRelations(id);
+    if (!rel) {
+      res.status(404).json({ error: "not found" });
+      return;
+    }
+    if (until !== null && rel.row.inboxStatus !== "new") {
+      res.status(409).json({ error: "can only snooze recordings in 'new' status" });
+      return;
+    }
+    // Otherwise the new value equals the existing value — treat as success.
+  }
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.patch("/:id/category", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const raw = req.body?.category;
+  if (raw !== null && typeof raw !== "string") {
+    res.status(400).json({ error: "category must be a string or null" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  setCategory(id, raw);
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.patch("/:id/notes", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const raw = req.body?.notes;
+  if (raw !== null && typeof raw !== "string") {
+    res.status(400).json({ error: "notes must be a string or null" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  setInboxNotes(id, raw);
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.post("/:id/tags", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const tag = req.body?.tag;
+  if (typeof tag !== "string" || !tag.trim()) {
+    res.status(400).json({ error: "tag must be a non-empty string" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  addRecordingTag(id, tag);
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.delete("/:id/tags/:tag", (req, res) => {
+  const id = req.params.id;
+  const tag = req.params.tag;
+  if (!id || !tag) {
+    res.status(400).json({ error: "missing id or tag" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  removeRecordingTag(id, tag);
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.post("/:id/jira-links", (req, res) => {
+  const id = req.params.id;
+  if (!id) {
+    res.status(400).json({ error: "missing id" });
+    return;
+  }
+  const { issueKey, issueUrl, relation } = req.body ?? {};
+  if (typeof issueKey !== "string" || !issueKey.trim()) {
+    res.status(400).json({ error: "issueKey must be a non-empty string" });
+    return;
+  }
+  if (issueUrl !== undefined && issueUrl !== null && typeof issueUrl !== "string") {
+    res.status(400).json({ error: "issueUrl must be a string or null" });
+    return;
+  }
+  if (relation !== undefined && typeof relation !== "string") {
+    res.status(400).json({ error: "relation must be a string" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  addJiraLink({
+    recordingId: id,
+    issueKey: issueKey.trim(),
+    issueUrl: typeof issueUrl === "string" && issueUrl.trim() ? issueUrl.trim() : null,
+    relation: (relation as string) || "created_from",
+  });
+  respondWithDetail(res, id);
+});
+
+recordingsRouter.delete("/:id/jira-links/:issueKey", (req, res) => {
+  const id = req.params.id;
+  const issueKey = req.params.issueKey;
+  if (!id || !issueKey) {
+    res.status(400).json({ error: "missing id or issueKey" });
+    return;
+  }
+  const exists = getRecordingWithRelations(id);
+  if (!exists) {
+    res.status(404).json({ error: "not found" });
+    return;
+  }
+  removeJiraLink(id, issueKey);
+  respondWithDetail(res, id);
 });
