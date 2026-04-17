@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "rootscribe-inbox": {
-      "command": "node",
-      "args": ["inbox-mcp/dist/index.js"]
+      "command": "pnpm",
+      "args": ["--silent", "run", "start:mcp"]
     }
   }
 }

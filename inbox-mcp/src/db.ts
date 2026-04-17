@@ -13,7 +13,30 @@ export function getDb(): Database.Database {
   // Shared DB with the server process — wait up to 5s on contention instead
   // of failing immediately with SQLITE_BUSY.
   db.pragma("busy_timeout = 5000");
+  assertV4Schema(db);
   return db;
+}
+
+// The server owns migrations (see server/src/db.ts v4 block). If someone
+// connects this MCP to a DB that predates v4, every query will fail with a
+// cryptic "no such column" deep in a tool handler. Fail fast and loud instead.
+function assertV4Schema(d: Database.Database): void {
+  const cols = d.prepare("PRAGMA table_info(recordings)").all() as { name: string }[];
+  const hasInboxStatus = cols.some((c) => c.name === "inbox_status");
+  const tables = d
+    .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+    .all() as { name: string }[];
+  const tableNames = new Set(tables.map((t) => t.name));
+  const missing: string[] = [];
+  if (!hasInboxStatus) missing.push("recordings.inbox_status column");
+  if (!tableNames.has("recording_tags")) missing.push("recording_tags table");
+  if (!tableNames.has("recording_jira_links")) missing.push("recording_jira_links table");
+  if (missing.length > 0) {
+    throw new Error(
+      `[rootscribe-inbox-mcp] state.sqlite is missing v4 inbox schema (${missing.join(", ")}). ` +
+        `Run a compatible rootscribe server at least once to apply migrations before connecting this MCP.`,
+    );
+  }
 }
 
 export type InboxStatus = "new" | "reviewed" | "archived" | "snoozed";
@@ -87,6 +110,27 @@ export function listNew(params: { limit?: number; category?: string; tag?: strin
 export function recent(params: { limit?: number; status?: InboxStatus }): InboxRow[] {
   const d = getDb();
   const limit = Math.min(params.limit ?? 25, 200);
+  const now = Date.now();
+  // 'snoozed' is a virtual status: inbox_status='new' with snoozed_until in the
+  // future. 'new' excludes currently-snoozed rows so the counts line up.
+  if (params.status === "snoozed") {
+    return d
+      .prepare(
+        `SELECT ${INBOX_COLS} FROM recordings
+         WHERE inbox_status = 'new' AND snoozed_until IS NOT NULL AND snoozed_until > ?
+         ORDER BY start_time DESC LIMIT ?`,
+      )
+      .all(now, limit) as InboxRow[];
+  }
+  if (params.status === "new") {
+    return d
+      .prepare(
+        `SELECT ${INBOX_COLS} FROM recordings
+         WHERE inbox_status = 'new' AND (snoozed_until IS NULL OR snoozed_until <= ?)
+         ORDER BY start_time DESC LIMIT ?`,
+      )
+      .all(now, limit) as InboxRow[];
+  }
   if (params.status) {
     return d
       .prepare(
@@ -158,17 +202,20 @@ export function archive(recordingId: string): boolean {
   return d.prepare("UPDATE recordings SET inbox_status = 'archived' WHERE id = ?").run(recordingId).changes > 0;
 }
 
+// Snooze/unsnooze leave inbox_status alone (still 'new') and flip snoozed_until.
+// listNew() hides rows where snoozed_until > now and surfaces them again once
+// that timestamp passes — no background job required to auto-unsnooze.
 export function snooze(recordingId: string, until: number): boolean {
   const d = getDb();
   return d
-    .prepare("UPDATE recordings SET inbox_status = 'snoozed', snoozed_until = ? WHERE id = ?")
+    .prepare("UPDATE recordings SET snoozed_until = ? WHERE id = ? AND inbox_status = 'new'")
     .run(until, recordingId).changes > 0;
 }
 
 export function unsnooze(recordingId: string): boolean {
   const d = getDb();
   return d
-    .prepare("UPDATE recordings SET inbox_status = 'new', snoozed_until = NULL WHERE id = ?")
+    .prepare("UPDATE recordings SET snoozed_until = NULL WHERE id = ?")
     .run(recordingId).changes > 0;
 }
 

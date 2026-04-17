@@ -232,6 +232,7 @@ async function emitChannelNudges(): Promise<void> {
     const pending = unnotifiedNew();
     for (const row of pending) {
       const text = `New transcript: "${row.filename}" (${Math.round(row.duration_ms / 1000)}s). Use list_new to review.`;
+      let delivered = false;
       // `notifications/claude/channel` is the Claude Code Channels API (research preview,
       // v2.1.80+). If the client doesn't implement it, the notification is silently dropped.
       try {
@@ -239,8 +240,9 @@ async function emitChannelNudges(): Promise<void> {
           method: "notifications/claude/channel",
           params: { kind: "inbox.new_transcript", recording_id: row.id, text },
         });
+        delivered = true;
       } catch {
-        /* best effort */
+        /* best effort — fall through to logging channel */
       }
       // Also send a standard logging/message notification so it shows up even
       // without Channels support.
@@ -249,10 +251,14 @@ async function emitChannelNudges(): Promise<void> {
           method: "notifications/message",
           params: { level: "info", data: text },
         });
+        delivered = true;
       } catch {
         /* best effort */
       }
-      markNotified(row.id);
+      // Only mark as notified if at least one channel actually accepted the
+      // send. Otherwise leave channel_notified_at NULL so the next poll retries
+      // — prevents a broken stdio pipe from permanently silencing a recording.
+      if (delivered) markNotified(row.id);
     }
   } catch {
     /* swallow — best effort, we'll retry on the next tick */

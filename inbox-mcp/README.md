@@ -11,6 +11,8 @@ pnpm install
 pnpm --filter @rootscribe/inbox-mcp build
 ```
 
+> **Prerequisite:** this MCP server reads the same `state.sqlite` the Rootscribe/Applaud server writes to, and assumes the **v4 inbox schema** has already been applied. Run a compatible rootscribe server (`pnpm start` from the repo root) at least once before connecting this MCP — the server owns migrations. The MCP will fail fast at startup with a clear message if the schema is missing.
+
 ## Register with Claude Code
 
 User-scope registration (available from any working directory):

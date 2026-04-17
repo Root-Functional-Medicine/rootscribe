@@ -13,6 +13,7 @@
     "build": "pnpm -C shared build && pnpm -C web build && pnpm -C server build",
     "start": "pnpm build && node server/dist/index.js",
     "start:nobuild": "node server/dist/index.js",
+    "start:mcp": "pnpm -F @rootscribe/inbox-mcp build >&2 && node inbox-mcp/dist/index.js",
     "typecheck": "pnpm -r typecheck",
     "clean": "pnpm -r clean && rm -rf node_modules"
   },
