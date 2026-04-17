@@ -26,6 +26,7 @@ export function Settings(): JSX.Element {
 
   const [webhookUrl, setWebhookUrl] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
+  const [jiraBaseUrl, setJiraBaseUrl] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
@@ -35,6 +36,7 @@ export function Settings(): JSX.Element {
     const c = cfg.data.config;
     setWebhookUrl(c.webhook?.url ?? "");
     setPollMinutes(c.pollIntervalMinutes);
+    setJiraBaseUrl(c.jiraBaseUrl ?? "");
     setDirty(false);
   }, [cfg.data]);
 
@@ -50,6 +52,7 @@ export function Settings(): JSX.Element {
           ? { url: webhookUrl.trim(), enabled: true }
           : null,
         pollIntervalMinutes: pollMinutes,
+        jiraBaseUrl: jiraBaseUrl.trim(),
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);
@@ -255,6 +258,45 @@ export function Settings(): JSX.Element {
             <span>30 mins</span>
             <span>60 mins</span>
           </div>
+        </div>
+      </section>
+
+      {/* Jira Integration */}
+      <section className="card p-8 space-y-6">
+        <div className="flex items-center gap-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          <div>
+            <h2 className="text-xl font-bold text-on-surface">Jira Integration</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Paste just an issue key (e.g. <span className="font-mono">DEVX-96</span>) and we'll
+              build the link from this base URL.
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+            Base URL
+          </label>
+          <div className="relative">
+            <input
+              className="input py-3 border-transparent font-mono text-sm"
+              type="url"
+              placeholder="https://rootfunctionalmedicine.atlassian.net/browse/"
+              value={jiraBaseUrl}
+              onChange={(e) => {
+                setJiraBaseUrl(e.target.value);
+                setDirty(true);
+              }}
+            />
+          </div>
+          {jiraBaseUrl.trim() && (
+            <p className="text-[11px] text-on-surface-variant font-mono">
+              Preview: <span className="text-primary">{jiraBaseUrl.trim().replace(/\/+$/, "")}/DEVX-96</span>
+            </p>
+          )}
         </div>
       </section>
 

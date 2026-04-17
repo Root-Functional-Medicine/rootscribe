@@ -21,6 +21,10 @@ export interface AppConfig {
   pollIntervalMinutes: number;
   bind: BindConfig;
   lanToken: string | null;
+  // Base URL for auto-constructing Jira issue links. When a recording has a
+  // Jira issue key but no explicit URL, the UI builds `${jiraBaseUrl}${key}`.
+  // Trailing slash is expected — see helpers in shared/src/jira.ts.
+  jiraBaseUrl: string;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -35,4 +39,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   pollIntervalMinutes: 10,
   bind: { host: "127.0.0.1", port: 44471 },
   lanToken: null,
+  jiraBaseUrl: "https://rootfunctionalmedicine.atlassian.net/browse/",
 };

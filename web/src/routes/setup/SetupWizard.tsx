@@ -5,10 +5,11 @@ import { WelcomeStep } from "./WelcomeStep.js";
 import { AuthStep } from "./AuthStep.js";
 import { RecordingsDirStep } from "./RecordingsDirStep.js";
 import { WebhookStep } from "./WebhookStep.js";
+import { JiraStep } from "./JiraStep.js";
 import { ReviewStep } from "./ReviewStep.js";
 import { api } from "../../api.js";
 
-const STEPS = ["Welcome", "Auth", "Folder", "Webhook", "Review"] as const;
+const STEPS = ["Welcome", "Auth", "Folder", "Webhook", "Jira", "Review"] as const;
 type Step = (typeof STEPS)[number];
 
 export function SetupWizard(): JSX.Element {
@@ -47,7 +48,7 @@ export function SetupWizard(): JSX.Element {
             </span>
           </div>
           {/* Progress bars */}
-          <div className="grid grid-cols-5 gap-2 h-1.5 w-full">
+          <div className="grid grid-cols-6 gap-2 h-1.5 w-full">
             {STEPS.map((_, i) => (
               <div
                 key={i}
@@ -58,7 +59,7 @@ export function SetupWizard(): JSX.Element {
             ))}
           </div>
           {/* Step labels */}
-          <div className="hidden md:grid grid-cols-5 gap-2 text-center">
+          <div className="hidden md:grid grid-cols-6 gap-2 text-center">
             {STEPS.map((label, i) => (
               <span
                 key={label}
@@ -80,6 +81,7 @@ export function SetupWizard(): JSX.Element {
           {step === "Auth" && <AuthStep onNext={next} onBack={prev} />}
           {step === "Folder" && <RecordingsDirStep onNext={next} onBack={prev} />}
           {step === "Webhook" && <WebhookStep onNext={next} onBack={prev} />}
+          {step === "Jira" && <JiraStep onNext={next} onBack={prev} />}
           {step === "Review" && <ReviewStep onFinish={finish} onBack={prev} />}
         </div>
       </div>

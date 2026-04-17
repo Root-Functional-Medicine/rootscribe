@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { JiraLink } from "@applaud/shared";
+import { isValidJiraKey, buildJiraUrl } from "@applaud/shared";
 import { api } from "../api.js";
 
 interface JiraLinksEditorProps {
@@ -8,12 +9,16 @@ interface JiraLinksEditorProps {
   links: JiraLink[];
 }
 
-const KEY_PATTERN = /^[A-Z][A-Z0-9]+-\d+$/;
-
 export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [issueKey, setIssueKey] = useState("");
   const [issueUrl, setIssueUrl] = useState("");
+
+  // Read the configured base URL so we can auto-construct a full link when the
+  // user only pastes an issue key. Config is already cached by react-query and
+  // shared with Settings/SetupWizard, so this is a cheap read.
+  const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
+  const jiraBaseUrl = cfg.data?.config.jiraBaseUrl ?? "";
 
   const invalidate = async (): Promise<void> => {
     await qc.invalidateQueries({ queryKey: ["recording", recordingId] });
@@ -30,7 +35,16 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   });
 
   const normalized = issueKey.trim().toUpperCase();
-  const keyValid = KEY_PATTERN.test(normalized);
+  const keyValid = isValidJiraKey(normalized);
+
+  // If the user didn't provide an explicit URL, fall back to the configured
+  // base. This is the common case — paste a key, hit Enter, get a proper link.
+  const resolvedUrl = (): string | null => {
+    const explicit = issueUrl.trim();
+    if (explicit) return explicit;
+    if (keyValid && jiraBaseUrl) return buildJiraUrl(jiraBaseUrl, normalized);
+    return null;
+  };
 
   const commit = (): void => {
     if (!keyValid) return;
@@ -41,7 +55,7 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
     }
     addLink.mutate({
       issueKey: normalized,
-      issueUrl: issueUrl.trim() || null,
+      issueUrl: resolvedUrl(),
     });
     setIssueKey("");
     setIssueUrl("");
@@ -105,7 +119,11 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
         />
         <input
           className="input text-xs py-1.5"
-          placeholder="https://… (optional)"
+          placeholder={
+            jiraBaseUrl
+              ? `Auto: ${jiraBaseUrl}${normalized || "KEY"}`
+              : "https://… (optional)"
+          }
           value={issueUrl}
           onChange={(e) => setIssueUrl(e.target.value)}
           onKeyDown={(e) => {
