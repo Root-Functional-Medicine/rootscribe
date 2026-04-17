@@ -112,7 +112,7 @@ export function listNew(params: { limit?: number; category?: string; tag?: strin
       `SELECT ${INBOX_COLS} FROM recordings
        WHERE inbox_status = 'new'
          AND transcript_downloaded_at IS NOT NULL
-         AND (snoozed_until IS NULL OR snoozed_until < ?)
+         AND (snoozed_until IS NULL OR snoozed_until <= ?)
          AND (? IS NULL OR category = ?)
        ORDER BY start_time DESC
        LIMIT ?`,
