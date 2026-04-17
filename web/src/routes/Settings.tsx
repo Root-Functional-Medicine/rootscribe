@@ -47,12 +47,18 @@ export function Settings(): JSX.Element {
   const save = async (): Promise<void> => {
     setSaving(true);
     try {
+      // Omit jiraBaseUrl from the patch when blank — the server's Zod
+      // `.url()` validator rejects empty strings, which would break Save
+      // even if the user only edited other fields. The existing value is
+      // preserved; clearing to "unset" isn't supported (the default URL is
+      // always safe to keep).
+      const trimmedJira = jiraBaseUrl.trim();
       await api.updateConfig({
         webhook: webhookUrl.trim()
           ? { url: webhookUrl.trim(), enabled: true }
           : null,
         pollIntervalMinutes: pollMinutes,
-        jiraBaseUrl: jiraBaseUrl.trim(),
+        ...(trimmedJira ? { jiraBaseUrl: trimmedJira } : {}),
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);

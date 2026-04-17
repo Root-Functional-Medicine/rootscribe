@@ -31,10 +31,13 @@ export function InboxFilters({
 }: InboxFiltersProps): JSX.Element {
   return (
     <div className="space-y-3">
-      {/* Status tabs — mirrors MCP list_new/recent semantics. */}
+      {/* Status filters — semantically a toggle group (one active selection),
+          not WAI-ARIA tabs. Using aria-pressed avoids implying tab keyboard
+          semantics (arrow navigation, tabpanel linkage) that this component
+          doesn't implement. */}
       <div
         className="flex flex-wrap items-center gap-1.5"
-        role="tablist"
+        role="group"
         aria-label="Filter by inbox status"
       >
         {FILTER_TABS.map((t) => {
@@ -42,8 +45,8 @@ export function InboxFilters({
           return (
             <button
               key={t.value}
-              role="tab"
-              aria-selected={active}
+              type="button"
+              aria-pressed={active}
               title={t.description}
               onClick={() => onFilterChange(t.value)}
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-label font-bold uppercase tracking-widest transition-colors ${

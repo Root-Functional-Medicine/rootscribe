@@ -197,9 +197,17 @@ recordingsRouter.patch("/:id/snooze", (req, res) => {
     res.status(400).json({ error: "missing id" });
     return;
   }
-  const raw = req.body?.snoozedUntil;
+  // The contract is "explicit epoch-ms or explicit null" — an empty body must
+  // fail loudly instead of silently unsnoozing, which is a surprising outcome
+  // for a route named /snooze.
+  const body: Record<string, unknown> = (req.body as Record<string, unknown>) ?? {};
+  if (!Object.prototype.hasOwnProperty.call(body, "snoozedUntil")) {
+    res.status(400).json({ error: "snoozedUntil field is required (pass null to unsnooze)" });
+    return;
+  }
+  const raw = body.snoozedUntil;
   let until: number | null;
-  if (raw === null || raw === undefined) {
+  if (raw === null) {
     until = null;
   } else if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
     until = raw;
@@ -323,6 +331,24 @@ recordingsRouter.post("/:id/jira-links", (req, res) => {
     res.status(400).json({ error: "issueUrl must be a string or null" });
     return;
   }
+  // Validate the URL scheme: javascript:/data:/about: etc. would be rendered
+  // into an <a href> on the client and become XSS/navigation vectors. Only
+  // http/https are permitted for persisted Jira URLs.
+  let normalizedUrl: string | null = null;
+  if (typeof issueUrl === "string" && issueUrl.trim()) {
+    const trimmedUrl = issueUrl.trim();
+    try {
+      const parsed = new URL(trimmedUrl);
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+        res.status(400).json({ error: "issueUrl must use http or https scheme" });
+        return;
+      }
+      normalizedUrl = trimmedUrl;
+    } catch {
+      res.status(400).json({ error: "issueUrl must be a valid absolute URL" });
+      return;
+    }
+  }
   if (relation !== undefined && typeof relation !== "string") {
     res.status(400).json({ error: "relation must be a string" });
     return;
@@ -335,7 +361,7 @@ recordingsRouter.post("/:id/jira-links", (req, res) => {
   addJiraLink({
     recordingId: id,
     issueKey: normalizedKey,
-    issueUrl: typeof issueUrl === "string" && issueUrl.trim() ? issueUrl.trim() : null,
+    issueUrl: normalizedUrl,
     relation: (relation as string) || "created_from",
   });
   respondWithDetail(res, id);

@@ -301,12 +301,14 @@ export function setInboxStatus(
   if (status === "archived") {
     return db.prepare("UPDATE recordings SET inbox_status = 'archived' WHERE id = ?").run(id).changes > 0;
   }
-  // Resetting to 'new' also clears reviewed_at so the MCP's unnotifiedNew()
-  // query sees it again if the user manually re-opens a reviewed/archived item.
+  // Resetting to 'new' also clears reviewed_at and snoozed_until: after a
+  // manual reopen the user expects the item to behave like an active inbox
+  // item, not to silently re-snooze on a stale timestamp from before it was
+  // reviewed/archived. The MCP's unnotifiedNew() also sees it again.
   return (
     db
       .prepare(
-        "UPDATE recordings SET inbox_status = 'new', reviewed_at = NULL WHERE id = ?",
+        "UPDATE recordings SET inbox_status = 'new', reviewed_at = NULL, snoozed_until = NULL WHERE id = ?",
       )
       .run(id).changes > 0
   );

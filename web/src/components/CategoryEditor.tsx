@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api.js";
 
@@ -14,6 +14,10 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(category ?? "");
+  // Escape triggers setEditing(false), which unmounts the focused input and
+  // fires blur → commit(). Without this guard, commit() would persist the
+  // pre-cancel draft even though the user explicitly discarded the edit.
+  const canceledRef = useRef(false);
 
   useEffect(() => {
     if (!editing) setDraft(category ?? "");
@@ -30,6 +34,11 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
   });
 
   const commit = (): void => {
+    if (canceledRef.current) {
+      canceledRef.current = false;
+      setEditing(false);
+      return;
+    }
     const trimmed = draft.trim();
     const next = trimmed || null;
     if (next !== category) mutation.mutate(next);
@@ -51,6 +60,7 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
               commit();
             }
             if (e.key === "Escape") {
+              canceledRef.current = true;
               setDraft(category ?? "");
               setEditing(false);
             }
