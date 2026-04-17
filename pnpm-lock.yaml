@@ -17,9 +17,6 @@ importers:
 
   inbox-mcp:
     dependencies:
-      '@applaud/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@modelcontextprotocol/sdk':
         specifier: ^1.0.4
         version: 1.29.0(zod@3.25.76)
