@@ -1,0 +1,64 @@
+name: E2E
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Playwright smoke (chromium, headless)
+    runs-on: ubuntu-latest
+    env:
+      # Scratch config dir for a clean "first-run" state every build so the
+      # setup-wizard redirect is deterministic and the real user config
+      # (~/Library/Application Support/applaud) is never touched.
+      APPLAUD_CONFIG_DIR: ${{ github.workspace }}/.applaud-ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build production bundle
+        run: pnpm build
+
+      - name: Install Playwright browsers (chromium only)
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Run Playwright smoke tests
+        run: pnpm test:e2e
+        env:
+          CI: "1"
+
+      - name: Upload Playwright HTML report on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ github.run_id }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload Playwright trace/video artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ github.run_id }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 14
