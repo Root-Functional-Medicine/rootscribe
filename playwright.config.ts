@@ -16,7 +16,17 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 //   CI → Express with built SPA → 44471
 //   local → Vite dev server (proxies /api) → 44470
 const DEFAULT_PORT = process.env.CI ? 44471 : 44470;
-const PORT = Number(process.env.ROOTSCRIBE_E2E_PORT ?? DEFAULT_PORT);
+const rawPort = process.env.ROOTSCRIBE_E2E_PORT ?? String(DEFAULT_PORT);
+const PORT = Number(rawPort);
+// Reject non-integer / out-of-range ports loudly. Without this,
+// `Number("not-a-number")` silently yields NaN, which propagates into
+// BASE_URL ("http://127.0.0.1:NaN"), SERVER_PORT, and settings.json's
+// bind.port — turning a typo into a cryptic E2E startup failure.
+if (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535) {
+  throw new Error(
+    `Invalid ROOTSCRIBE_E2E_PORT: ${rawPort}. Expected an integer between 1 and 65535.`,
+  );
+}
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 // Resolve the server process's config dir at Playwright load time.
@@ -36,13 +46,26 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 const MINTED_PREFIX = path.join(tmpdir(), "rootscribe-e2e-");
 const ALREADY_SEEDED_FLAG = "ROOTSCRIBE_E2E_ALREADY_SEEDED";
 
+// Windows path comparisons need normalization + case-folding: `$env:TEMP`
+// could be `C:\Users\...\Temp` in one place and `c:/users/.../temp` in
+// another (forward slashes / different casing). Without normalization, a
+// self-minted dir can get misclassified as caller-supplied — triggering
+// the guard or skipping teardown cleanup.
+function normalizePathForComparison(dir: string): string {
+  const normalized = path.normalize(path.resolve(dir));
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+}
+const normalizedMintedPrefix = normalizePathForComparison(MINTED_PREFIX);
+
 const allowSuppliedDir = process.env.ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR === "1";
 const alreadySeeded = process.env[ALREADY_SEEDED_FLAG] === "1";
 const envDir =
   process.env.ROOTSCRIBE_CONFIG_DIR && process.env.ROOTSCRIBE_CONFIG_DIR.length > 0
     ? process.env.ROOTSCRIBE_CONFIG_DIR
     : null;
-const isOurMintedDir = envDir !== null && envDir.startsWith(MINTED_PREFIX);
+const isOurMintedDir =
+  envDir !== null &&
+  normalizePathForComparison(envDir).startsWith(normalizedMintedPrefix);
 
 if (envDir && !isOurMintedDir && !allowSuppliedDir) {
   throw new Error(
