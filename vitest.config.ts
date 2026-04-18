@@ -43,21 +43,21 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #1):
-      // 19.44% lines, 12.49% branches, 19.27% functions, 18.83% statements.
-      // DEVX-102 ratchet #1 added unit tests for the server's pure-function
-      // + thin-HTTP-wrapper cluster (sync/events, sync/layout, auth/profiles,
-      // plaud/{list,audio,detail}) plus test-seam code (db.resetDbSingleton,
-      // routes/_test, test-seed/fixtures) and a supertest/Playwright harness
-      // against the E2E-gated test routes. Thresholds sit ~0.5% below the
-      // achieved numbers so drops from untested additions fail CI without
-      // false-alarming on minor coverage noise. Subsequent DEVX-102 PRs will
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #2):
+      // 38.56% lines, 29.44% branches, 31.60% functions, 36.72% statements.
+      // Ratchet #2 added unit tests for the server routes cluster
+      // (routes/sync, routes/media, sync/state, routes/recordings) — all 11
+      // recordings endpoints with full validation and inbox-workflow
+      // coverage, plus the state module's DB CRUD helpers tested against a
+      // real seeded SQLite fixture. Thresholds sit ~0.5% below the achieved
+      // numbers so drops from untested additions fail CI without false-
+      // alarming on minor coverage noise. Subsequent DEVX-102 PRs will
       // continue bumping each axis toward 95%.
       thresholds: {
-        lines: 19,
-        functions: 19,
-        branches: 12,
-        statements: 18,
+        lines: 38,
+        functions: 31,
+        branches: 29,
+        statements: 36,
       },
     },
   },
