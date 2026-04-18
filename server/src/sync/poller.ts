@@ -2,7 +2,7 @@ import { writeFileSync } from "node:fs";
 import { loadConfig } from "../config.js";
 import { logger } from "../logger.js";
 import { listRecordings } from "../plaud/list.js";
-import { downloadAudio, md5File } from "../plaud/audio.js";
+import { downloadAudio } from "../plaud/audio.js";
 import {
   getTranscriptAndSummary,
   flattenTranscript,
