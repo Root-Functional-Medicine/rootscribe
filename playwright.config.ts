@@ -74,6 +74,12 @@ export default defineConfig({
     stderr: "pipe",
     env: {
       APPLAUD_CONFIG_DIR: E2E_CONFIG_DIR,
+      // Suppress the server's first-run `open()` call — otherwise every
+      // `pnpm test:e2e` invocation pops a setup-wizard browser at the user's
+      // desktop on top of (and unrelated to) Playwright's own headless
+      // chromium. `--headed` / `--ui` still work for debugging the test
+      // browser itself; this flag only silences the app.
+      APPLAUD_NO_OPEN: "1",
     },
   },
 });
