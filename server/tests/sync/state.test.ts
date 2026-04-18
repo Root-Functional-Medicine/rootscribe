@@ -1,6 +1,14 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaudRawRecording } from "@rootscribe/shared";
 import { cleanupTempDir, mkTempConfigDir } from "../helpers/test-server.js";
+
+// Freeze Date.now() to a stable moment WITHIN the seed fixture's window
+// (day 14 = 2026-04-15T12:00:00Z, four days before the seed's snoozed_until
+// values at day(18) = 2026-04-19). Without this, the filter='snoozed' and
+// filter='active' assertions become time-bombs — once real wallclock moves
+// past the seed's snooze date, `snoozed_until > Date.now()` flips and the
+// suite starts failing for no code reason.
+const FROZEN_TIME = Date.UTC(2026, 3, 15, 12, 0, 0);
 
 // Set the config dir BEFORE importing anything that touches paths/config.
 // server/src/config.ts caches the parsed settings at module load; if we
@@ -38,6 +46,11 @@ const {
 } = await import("../../src/sync/state.js");
 
 beforeAll(() => {
+  // Only fake Date so setTimeout/setImmediate continue firing at real
+  // wallclock (better-sqlite3 and supertest don't time-travel well under
+  // full fake timers).
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(FROZEN_TIME));
   seedInitialState(configDir);
 });
 
@@ -47,6 +60,7 @@ afterAll(() => {
   cleanupTempDir(configDir);
   if (originalConfigDir == null) delete process.env.ROOTSCRIBE_CONFIG_DIR;
   else process.env.ROOTSCRIBE_CONFIG_DIR = originalConfigDir;
+  vi.useRealTimers();
 });
 
 beforeEach(() => {

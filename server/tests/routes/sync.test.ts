@@ -134,7 +134,10 @@ describe("POST /api/sync/trigger", () => {
 });
 
 describe("GET /api/sync/events (SSE)", () => {
-  let server: Server;
+  // `Server | undefined` keeps the teardown typesafe: the guard in afterEach
+  // narrows to `Server` naturally, and resetting to undefined no longer
+  // needs an `as unknown as Server` cast.
+  let server: Server | undefined;
   let baseUrl: string;
   let unsub: ReturnType<typeof vi.fn>;
 
@@ -144,13 +147,14 @@ describe("GET /api/sync/events (SSE)", () => {
   });
 
   afterEach(() => {
-    // Guard against boot() having thrown before assigning `server`: optional
-    // chaining on a falsy server would skip close() and never call resolve(),
-    // hanging the afterEach indefinitely.
+    // Guard against boot() having thrown before assigning `server`:
+    // without this, TS would still let us call close() but resolve()
+    // would never fire and the afterEach would hang indefinitely.
     if (!server) return Promise.resolve();
+    const s = server;
     return new Promise<void>((resolve) => {
-      server.close(() => {
-        server = undefined as unknown as Server;
+      s.close(() => {
+        server = undefined;
         resolve();
       });
     });

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
 import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
@@ -7,6 +7,12 @@ import {
   makeTestApp,
   mkTempConfigDir,
 } from "../helpers/test-server.js";
+
+// Freeze Date.now() to a moment WITHIN the seed fixture's window so the
+// filter='snoozed' / filter='active' assertions stay stable after real-
+// world time passes the seed's snoozed_until values (day(18)=2026-04-19).
+// See server/src/test-seed/fixtures.ts for the `day()` offsets.
+const FROZEN_TIME = Date.UTC(2026, 3, 15, 12, 0, 0);
 
 // Set the config dir BEFORE importing any server module that caches config
 // or opens the DB singleton.
@@ -21,6 +27,11 @@ const { resetConfigCache } = await import("../../src/config.js");
 const app = makeTestApp((a) => a.use("/api/recordings", recordingsRouter));
 
 beforeAll(() => {
+  // Only fake Date — supertest's internal timers need to keep firing at
+  // real wallclock, so `toFake: ['Date']` freezes Date.now() without
+  // touching setTimeout/setImmediate.
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(FROZEN_TIME));
   seedInitialState(configDir);
 });
 
@@ -30,6 +41,7 @@ afterAll(() => {
   cleanupTempDir(configDir);
   if (originalConfigDir == null) delete process.env.ROOTSCRIBE_CONFIG_DIR;
   else process.env.ROOTSCRIBE_CONFIG_DIR = originalConfigDir;
+  vi.useRealTimers();
 });
 
 beforeEach(() => {
