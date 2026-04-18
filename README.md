@@ -170,6 +170,84 @@ pnpm dev
 
 Runs the Vite dev server on port 44470 with a proxy for `/api` and `/media` to the Express server on port 44471. The server runs in `tsx watch` mode. Hot reload works on both sides.
 
+## Running tests
+
+All four workspace packages (`shared`, `server`, `web`, `inbox-mcp`) share one test harness: Vitest for unit + integration, Playwright for end-to-end user journeys. A single root command exercises the whole suite.
+
+```bash
+# Unit + integration, every package
+pnpm test
+
+# Watch mode
+pnpm test:watch
+
+# With V8 coverage (HTML + LCOV + json-summary)
+pnpm test:coverage
+
+# End-to-end (Playwright, chromium, headless)
+pnpm test:e2e
+
+# E2E with a visible browser (handy while authoring specs)
+pnpm test:e2e:headed
+
+# Open the HTML report after a failed E2E run
+pnpm test:e2e:report
+
+# Everything CI runs, sequenced locally
+pnpm ci
+```
+
+Individual package suites can be run with `pnpm -C <package> vitest run` (e.g. `pnpm -C server vitest run`).
+
+### Philosophy
+
+- **Test real behavior, not mocks.** Server tests hit real Express routes via `supertest`; database tests use real SQLite against tmp fixtures; web component tests render with `@testing-library/react` against the real React tree. Mocks are reserved for the network boundary (see `web/src/api.test.ts`).
+- **One test harness per package.** Each package declares its own `vitest.config.ts` (environment, setup, aliases). The root `vitest.workspace.ts` discovers them; coverage is aggregated across all four.
+- **TDD is the default.** Write the test first, watch it fail, make it pass. See `SproutKit:test-driven-development` for the workflow this repo expects.
+
+### Coverage
+
+Coverage is tracked across lines, branches, functions, and statements (V8 provider). The root `vitest.config.ts` enforces baseline thresholds on every `pnpm test:coverage` run.
+
+Current baseline (Apr 2026): **~19% lines, ~78% branches, ~28% functions**. The ratcheting plan lives in the "Increase test coverage to 95%" follow-up Story — each PR there bumps thresholds +5% until every axis sits ≥ 95%.
+
+CI uploads the HTML coverage report as a workflow artifact and posts a per-PR summary comment via `davelosert/vitest-coverage-report-action`.
+
+### Directory layout
+
+```
+rootscribe/
+├── .github/workflows/
+│   ├── ci.yml           # lint + typecheck + unit/integration + coverage gate
+│   └── e2e.yml          # Playwright smoke (chromium, headless, artifacts on failure)
+├── vitest.config.ts     # global coverage aggregation + thresholds
+├── vitest.workspace.ts  # project discovery
+├── vitest.shared.ts     # shared exclude patterns + reporter wiring
+├── playwright.config.ts # chromium project, traces on retry, HTML reporter
+├── eslint.config.js     # flat config (ESLint 9) + vitest/testing-library plugins
+├── tests/e2e/           # cross-package user journeys
+└── <package>/
+    ├── vitest.config.ts # per-package environment + setup
+    ├── src/**/*.test.ts # co-located unit tests
+    └── tests/           # integration tests (supertest, SQLite fixtures)
+```
+
+## CI/CD
+
+Two GitHub Actions workflows gate every PR against `main`:
+
+- **`ci.yml`** — installs dependencies, runs ESLint, typechecks all four packages, executes the Vitest suite with coverage on Node 20 and 22, uploads artifacts, and posts a coverage summary comment.
+- **`e2e.yml`** — builds the production bundle, installs Chromium, runs Playwright smoke tests against a scratch `APPLAUD_CONFIG_DIR`, and uploads traces + videos on failure.
+
+Once both workflows are green on a PR, require the `CI / test` and `E2E / playwright` checks in branch protection on `main` (admin step, not automated here).
+
+## Contributing
+
+- **Follow TDD.** Red → green → refactor, one commit per cycle where practical.
+- **Touch production code only to fix bugs the tests surface.** Refactors, style tweaks, and speculative abstractions belong in their own tickets.
+- **Run `pnpm ci` before pushing.** Matches exactly what GitHub Actions will run.
+- **Avoid the anti-patterns in `SproutKit:testing-anti-patterns`.** In particular: don't test mock behavior, don't add test-only methods to production classes, and don't mock something you don't understand.
+
 ## License
 
 MIT

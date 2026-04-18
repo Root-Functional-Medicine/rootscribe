@@ -1,0 +1,42 @@
+import type { UserConfig } from "vitest/config";
+
+// Common exclude patterns shared across every package's unit/integration runs.
+// Playwright specs live under tests/e2e and must not be discovered by Vitest.
+export const sharedExclude = [
+  "**/node_modules/**",
+  "**/dist/**",
+  "**/.{idea,git,cache,output,temp}/**",
+  "**/tests/e2e/**",
+  "**/playwright-report/**",
+  "**/test-results/**",
+];
+
+// Files that should not count toward coverage — entrypoints, type-only
+// modules, and generated output. Each package can extend this as needed.
+export const sharedCoverageExclude = [
+  ...sharedExclude,
+  "**/*.config.{ts,js,mjs}",
+  "**/vitest.setup.ts",
+  "**/index.ts",
+  "**/main.tsx",
+  "**/*.d.ts",
+  "**/types.ts",
+];
+
+// Per-project JUnit filename. In Vitest workspace mode every project writes
+// to disk in parallel; sharing `test-results/junit.xml` across projects means
+// they race each other and the last one wins. Including the project name in
+// the path gives each suite its own file so CI artifact upload gets complete
+// results for every package.
+export function baseTestConfig(
+  projectName: string,
+): NonNullable<UserConfig["test"]> {
+  return {
+    exclude: sharedExclude,
+    passWithNoTests: false,
+    reporters: process.env.CI ? ["default", "junit"] : ["default"],
+    outputFile: process.env.CI
+      ? { junit: `test-results/junit-${projectName}.xml` }
+      : undefined,
+  };
+}
