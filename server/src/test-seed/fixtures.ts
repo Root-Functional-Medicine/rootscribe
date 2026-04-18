@@ -265,7 +265,18 @@ function writeRecordingFiles(recordingsDir: string, rec: SeedRecording): void {
   const folder = path.join(recordingsDir, rec.folder);
   mkdirSync(folder, { recursive: true });
   const silent = silentOggPath();
-  if (existsSync(silent)) copyFileSync(silent, path.join(folder, "audio.ogg"));
+  // Fail fast if the audio fixture is missing. The seeded DB row points at
+  // <folder>/audio.ogg; without this file, Chromium's <audio> tag 404s and
+  // the RecordingDetail page surfaces an unexpected console error. A clear
+  // throw here beats a cryptic E2E failure deep inside Playwright.
+  if (!existsSync(silent)) {
+    throw new Error(
+      `seed: expected audio fixture at ${silent} but it's missing. ` +
+        `Restore tests/e2e/fixtures/silent.ogg (generate with: ` +
+        `ffmpeg -f lavfi -i "anullsrc=r=48000:cl=mono" -t 1 -c:a libopus -b:a 16k tests/e2e/fixtures/silent.ogg -y)`,
+    );
+  }
+  copyFileSync(silent, path.join(folder, "audio.ogg"));
   writeFileSync(
     path.join(folder, "transcript.txt"),
     `[00:00] Speaker 1: placeholder transcript for ${rec.filename}\n[00:05] Speaker 2: end of placeholder.\n`,

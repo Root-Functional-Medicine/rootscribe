@@ -34,14 +34,20 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   // parallel by `pnpm dev`), so the first POST can race against Express still
   // booting — surfacing as HTTP 502 from Vite's proxy. Retry a few times with
   // short backoff to ride out the gap without masking a legitimate failure.
+  // Each attempt is bounded by AbortSignal.timeout so a stuck upstream can't
+  // hang globalSetup indefinitely.
   const MAX_ATTEMPTS = 10;
   const BACKOFF_MS = 500;
+  const REQUEST_TIMEOUT_MS = 5_000;
   let response: Response | undefined;
   let lastTransportError: unknown;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      response = await fetch(`${baseURL}/api/_test/reset`, { method: "POST" });
+      response = await fetch(`${baseURL}/api/_test/reset`, {
+        method: "POST",
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
       // 502/503 means a proxy (Vite) is up but the upstream (Express) isn't —
       // retry. Any other non-OK is terminal.
       if (response.status === 502 || response.status === 503) {

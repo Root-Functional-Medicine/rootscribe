@@ -107,10 +107,10 @@ describe("listRecordings", () => {
   });
 
   it("serializes isDesc=false as the literal string 'false'", async () => {
-    // Plaud's API treats the query string value literally — if we sent the
-    // bare value Boolean(false) it would render as an empty string. This
-    // guards against a future refactor replacing String(b) with b.toString()
-    // or similar that happens to match today but could regress.
+    // Plaud's API treats this query parameter literally, so this test pins
+    // the current behavior that isDesc is explicitly stringified via
+    // String(isDesc) — rendering boolean false as "false". The test guards
+    // against a future refactor dropping the explicit String() wrap.
     plaudJsonMock.mockResolvedValueOnce(makeResponse([]));
     await listRecordings({ isDesc: false });
 
