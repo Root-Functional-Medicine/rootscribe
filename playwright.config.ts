@@ -27,13 +27,17 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 // ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR=1.
 //
 // Complication: Playwright re-executes this config file in every worker
-// process. On the first load, we mint a dir under `$TMPDIR/rootscribe-e2e-*`
-// and set process.env.ROOTSCRIBE_CONFIG_DIR to it. On subsequent re-loads,
-// we see our own minted dir in the env and must NOT treat it as a
-// "caller-supplied" dir — otherwise every worker throws the guard error.
-// Recognize our minted pattern by prefix so re-loads can skip re-minting.
+// process. We must seed exactly ONCE per run — re-seeding in a worker while
+// the server has open handles on state.sqlite causes file-lock / database
+// races. Track whether the first load has already seeded via
+// ROOTSCRIBE_E2E_ALREADY_SEEDED, which inherits into workers from the main
+// process's env. The minted-prefix check only catches the no-env case; the
+// sentinel covers BOTH no-env and explicitly-allowed caller-supplied paths.
 const MINTED_PREFIX = path.join(tmpdir(), "rootscribe-e2e-");
+const ALREADY_SEEDED_FLAG = "ROOTSCRIBE_E2E_ALREADY_SEEDED";
+
 const allowSuppliedDir = process.env.ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR === "1";
+const alreadySeeded = process.env[ALREADY_SEEDED_FLAG] === "1";
 const envDir =
   process.env.ROOTSCRIBE_CONFIG_DIR && process.env.ROOTSCRIBE_CONFIG_DIR.length > 0
     ? process.env.ROOTSCRIBE_CONFIG_DIR
@@ -50,19 +54,20 @@ if (envDir && !isOurMintedDir && !allowSuppliedDir) {
   );
 }
 
-// "explicit" here = caller-provided and explicitly allowed (either because
-// it's one we minted on a previous load, or because the opt-in flag is set).
-// Any other existing dir was rejected by the guard above.
-const explicitConfigDir = isOurMintedDir || allowSuppliedDir ? envDir : null;
-const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(MINTED_PREFIX);
-const shouldSeed = !isOurMintedDir;
+// Did the caller supply this directory, or did we mint it? This drives
+// teardown ownership: we only delete what we minted. Note that
+// allowSuppliedDir alone isn't enough — a caller could set the allow flag
+// without setting ROOTSCRIBE_CONFIG_DIR, in which case we mint and own the
+// dir normally.
+const callerSuppliedDir = envDir !== null && !isOurMintedDir;
+const E2E_CONFIG_DIR = envDir ?? mkdtempSync(MINTED_PREFIX);
+const shouldSeed = !alreadySeeded;
 
 // globalTeardown needs to know whether the directory was auto-created so it
 // doesn't delete a caller-supplied one. Passed through the environment
 // because Playwright's teardown runs in a different process from config load.
-// Only set it when WE minted the dir on this load (i.e. first main-process
-// load; worker re-loads that see a pre-minted env var don't re-mint).
-if (shouldSeed && !allowSuppliedDir) {
+// Only mark it for teardown when WE minted it (i.e. caller didn't supply).
+if (shouldSeed && !callerSuppliedDir) {
   process.env.ROOTSCRIBE_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
 }
 
@@ -89,9 +94,11 @@ process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
 const SERVER_PORT = process.env.CI ? PORT : 44471;
 // Skip re-seed on worker re-loads — the main process already seeded, and
 // writing here again while the server has open handles on state.sqlite
-// risks file-lock errors and database races.
+// risks file-lock errors and database races. The sentinel is set AFTER
+// seeding completes so a throw mid-seed still retries on next load.
 if (shouldSeed) {
   seedInitialState(E2E_CONFIG_DIR, { port: SERVER_PORT });
+  process.env[ALREADY_SEEDED_FLAG] = "1";
 }
 
 export default defineConfig({
