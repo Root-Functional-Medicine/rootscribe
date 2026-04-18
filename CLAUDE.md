@@ -76,7 +76,7 @@ Four packages via pnpm workspaces:
 - `web/` — React 18 + Vite + Tailwind. Talks to server via `/api` proxy.
 - `inbox-mcp/` — MCP stdio server that exposes the inbox DB to Claude Code.
 
-`@applaud/shared` is an internal workspace package. Its `main`/`types` point at `dist/`, so `pnpm -C shared build` must run before `pnpm typecheck`. The root `pnpm typecheck` script handles this automatically.
+`@rootscribe/shared` is an internal workspace package. Its `main`/`types` point at `dist/`, so `pnpm -C shared build` must run before `pnpm typecheck`. The root `pnpm typecheck` script handles this automatically.
 
 ## Testing + CI
 

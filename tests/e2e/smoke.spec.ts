@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 // Smoke-level journey: the server process boots, serves the SPA, and the
 // setup-wizard redirect fires on a first-run config. Playwright's webServer
 // block (see playwright.config.ts) runs `pnpm start` in CI against a scratch
-// APPLAUD_CONFIG_DIR, so this exercises the real production build + Express
+// ROOTSCRIBE_CONFIG_DIR, so this exercises the real production build + Express
 // route guard + React router, not a mocked app shell.
 
 test.describe("RootScribe smoke journey", () => {

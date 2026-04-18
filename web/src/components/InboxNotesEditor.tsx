@@ -1,6 +1,6 @@
 import { useState, useEffect, type JSX } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { InboxMutationResponse } from "@applaud/shared";
+import type { InboxMutationResponse } from "@rootscribe/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
 

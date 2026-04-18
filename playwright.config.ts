@@ -15,27 +15,27 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 //   CI → Express with built SPA → 44471
 //   local → Vite dev server (proxies /api) → 44470
 const DEFAULT_PORT = process.env.CI ? 44471 : 44470;
-const PORT = Number(process.env.APPLAUD_E2E_PORT ?? DEFAULT_PORT);
+const PORT = Number(process.env.ROOTSCRIBE_E2E_PORT ?? DEFAULT_PORT);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 // Resolve the server process's config dir at Playwright load time. If the
-// caller (CI, local dev) explicitly set APPLAUD_CONFIG_DIR, honor it —
+// caller (CI, local dev) explicitly set ROOTSCRIBE_CONFIG_DIR, honor it —
 // otherwise mint a disposable tmp dir. We must NEVER pass an empty string
-// to the server: server/src/paths.ts treats an empty APPLAUD_CONFIG_DIR as
-// "unset" and falls back to ~/Library/Application Support/applaud, which
+// to the server: server/src/paths.ts treats an empty ROOTSCRIBE_CONFIG_DIR as
+// "unset" and falls back to ~/Library/Application Support/rootscribe, which
 // would let local E2E runs read and mutate the user's real settings.json.
 const explicitConfigDir =
-  process.env.APPLAUD_CONFIG_DIR && process.env.APPLAUD_CONFIG_DIR.length > 0
-    ? process.env.APPLAUD_CONFIG_DIR
+  process.env.ROOTSCRIBE_CONFIG_DIR && process.env.ROOTSCRIBE_CONFIG_DIR.length > 0
+    ? process.env.ROOTSCRIBE_CONFIG_DIR
     : null;
 
-const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(path.join(tmpdir(), "applaud-e2e-"));
+const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(path.join(tmpdir(), "rootscribe-e2e-"));
 
 // globalTeardown needs to know whether the directory was auto-created so it
 // doesn't delete a caller-supplied one. Passed through the environment
 // because Playwright's teardown runs in a different process from config load.
 if (!explicitConfigDir) {
-  process.env.APPLAUD_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
+  process.env.ROOTSCRIBE_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
 }
 
 export default defineConfig({
@@ -73,13 +73,13 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      APPLAUD_CONFIG_DIR: E2E_CONFIG_DIR,
+      ROOTSCRIBE_CONFIG_DIR: E2E_CONFIG_DIR,
       // Suppress the server's first-run `open()` call — otherwise every
       // `pnpm test:e2e` invocation pops a setup-wizard browser at the user's
       // desktop on top of (and unrelated to) Playwright's own headless
       // chromium. `--headed` / `--ui` still work for debugging the test
       // browser itself; this flag only silences the app.
-      APPLAUD_NO_OPEN: "1",
+      ROOTSCRIBE_NO_OPEN: "1",
     },
   },
 });

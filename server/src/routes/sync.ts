@@ -2,7 +2,7 @@ import { Router } from "express";
 import { poller } from "../sync/poller.js";
 import { syncEvents } from "../sync/events.js";
 import { countPendingTranscripts, countErrorsLast24h } from "../sync/state.js";
-import type { SyncStatusResponse } from "@applaud/shared";
+import type { SyncStatusResponse } from "@rootscribe/shared";
 
 export const syncRouter = Router();
 

@@ -3,14 +3,14 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import express, { type Express } from "express";
 
-// Each suite gets its own APPLAUD_CONFIG_DIR rooted in /tmp so the real
-// user config in ~/Library/Application Support/applaud stays untouched.
+// Each suite gets its own ROOTSCRIBE_CONFIG_DIR rooted in /tmp so the real
+// user config in ~/Library/Application Support/rootscribe stays untouched.
 // The env var is set BEFORE the caller imports any server module, because
 // server/src/paths.ts reads it lazily on first call and server/src/config.ts
 // caches the parsed settings at module load.
-export function mkTempConfigDir(prefix = "applaud-test-"): string {
+export function mkTempConfigDir(prefix = "rootscribe-test-"): string {
   const dir = mkdtempSync(path.join(tmpdir(), prefix));
-  process.env.APPLAUD_CONFIG_DIR = dir;
+  process.env.ROOTSCRIBE_CONFIG_DIR = dir;
   return dir;
 }
 

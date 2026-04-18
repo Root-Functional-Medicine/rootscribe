@@ -6,7 +6,7 @@ import type {
   RecordingsListFilter,
   InboxStatus,
   JiraLink,
-} from "@applaud/shared";
+} from "@rootscribe/shared";
 import {
   getDb,
   rowToRecording,

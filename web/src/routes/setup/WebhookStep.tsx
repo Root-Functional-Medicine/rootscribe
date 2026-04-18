@@ -62,7 +62,7 @@ export function WebhookStep({
           <input
             className="w-full bg-surface-container-highest/50 border-0 rounded-lg py-4 pl-12 pr-4 text-on-surface placeholder:text-on-surface-variant/30 focus:ring-2 focus:ring-primary/40 focus:outline-none font-label tracking-wide"
             type="url"
-            placeholder="https://api.yourdomain.com/webhooks/applaud"
+            placeholder="https://api.yourdomain.com/webhooks/rootscribe"
             value={url}
             onChange={(e) => { setUrl(e.target.value); setTestResult(null); }}
           />

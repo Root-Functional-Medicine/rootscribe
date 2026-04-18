@@ -42,7 +42,7 @@ export function RecordingsDirStep({
         <span className="font-label text-primary text-xs font-bold tracking-widest uppercase">Step 3</span>
         <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Recordings Folder</h1>
         <p className="text-on-surface-variant text-base max-w-md leading-relaxed">
-          Where should Applaud download your recordings?
+          Where should RootScribe download your recordings?
         </p>
       </div>
 

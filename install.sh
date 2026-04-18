@@ -1,20 +1,20 @@
 #!/bin/sh
-# applaud installer
+# rootscribe installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/rsteckler/applaud/v0.5.6/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/v0.5.6/install.sh | sh
 #
 # What it does:
 #   1. Installs pnpm (via the official installer) if not already present.
 #   2. Ensures Node.js >= 20 is available (installs via pnpm if missing).
-#   3. Clones the applaud repo into ./applaud (or $APPLAUD_DIR).
+#   3. Clones the rootscribe repo into ./rootscribe (or $ROOTSCRIBE_DIR).
 #   4. Runs `pnpm install` and `pnpm build`.
-#   5. Prints the commands to start applaud.
+#   5. Prints the commands to start rootscribe.
 set -eu
 
-REPO_URL="${APPLAUD_REPO:-https://github.com/rsteckler/applaud.git}"
-REPO_REF="${APPLAUD_REF:-v0.5.6}"
-INSTALL_DIR="${APPLAUD_DIR:-$PWD/applaud}"
+REPO_URL="${ROOTSCRIBE_REPO:-https://github.com/Root-Functional-Medicine/rootscribe.git}"
+REPO_REF="${ROOTSCRIBE_REF:-v0.5.6}"
+INSTALL_DIR="${ROOTSCRIBE_DIR:-$PWD/rootscribe}"
 MIN_NODE_MAJOR=20
 
 say() { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
@@ -110,7 +110,7 @@ clone_repo() {
       git -C "$INSTALL_DIR" pull --ff-only || fail "git pull failed in $INSTALL_DIR"
       return
     fi
-    fail "$INSTALL_DIR exists and is not empty. Set APPLAUD_DIR to a different path, or remove it."
+    fail "$INSTALL_DIR exists and is not empty. Set ROOTSCRIBE_DIR to a different path, or remove it."
   fi
   say "cloning $REPO_URL (ref: $REPO_REF) into $INSTALL_DIR"
   git clone --depth 1 --branch "$REPO_REF" "$REPO_URL" "$INSTALL_DIR"
@@ -126,7 +126,7 @@ install_and_build() {
 print_next_steps() {
   cat <<EOF
 
-\033[1;32m✓ applaud installed at $INSTALL_DIR\033[0m
+\033[1;32m✓ rootscribe installed at $INSTALL_DIR\033[0m
 
 To start:
     cd $INSTALL_DIR
@@ -141,9 +141,9 @@ EOF
 main() {
   OS="$(detect_os)"
   if [ "$OS" = "unknown" ]; then
-    fail "unsupported OS. applaud supports macOS, Linux, and WSL."
+    fail "unsupported OS. rootscribe supports macOS, Linux, and WSL."
   fi
-  say "installing applaud (os: $OS)"
+  say "installing rootscribe (os: $OS)"
   ensure_xcode_cli
   ensure_git
   ensure_pnpm

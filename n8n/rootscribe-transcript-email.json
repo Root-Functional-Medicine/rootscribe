@@ -1,9 +1,9 @@
 {
-  "name": "Applaud — Summarize transcript & email",
+  "name": "RootScribe — Summarize transcript & email",
   "nodes": [
     {
       "parameters": {
-        "content": "## Applaud → Claude → Email\n\nThis flow receives Applaud webhook events, filters for `transcript_ready`, summarizes the transcript with Claude, and emails the result.\n\n**Before running:**\n1. Open the **Config** node and edit the values (recipient, sender, model, subject prefix).\n2. Assign an **Anthropic API** credential to the *Summarize with Claude* node.\n3. Assign an **SMTP** credential to the *Email Summary* node.\n4. Activate the workflow and copy the webhook URL into Applaud's Settings → Webhook.",
+        "content": "## RootScribe → Claude → Email\n\nThis flow receives RootScribe webhook events, filters for `transcript_ready`, summarizes the transcript with Claude, and emails the result.\n\n**Before running:**\n1. Open the **Config** node and edit the values (recipient, sender, model, subject prefix).\n2. Assign an **Anthropic API** credential to the *Summarize with Claude* node.\n3. Assign an **SMTP** credential to the *Email Summary* node.\n4. Activate the workflow and copy the webhook URL into RootScribe's Settings → Webhook.",
         "height": 320,
         "width": 420
       },
@@ -34,11 +34,11 @@
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "applaud",
+        "path": "rootscribe",
         "options": {}
       },
       "id": "461deda0-ece9-4ddc-ad20-9cfe6d8a2b2e",
-      "name": "Applaud Webhook",
+      "name": "RootScribe Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
@@ -60,13 +60,13 @@
             {
               "id": "cfg-2",
               "name": "from_email",
-              "value": "applaud@example.com",
+              "value": "rootscribe@example.com",
               "type": "string"
             },
             {
               "id": "cfg-3",
               "name": "subject_prefix",
-              "value": "[Applaud]",
+              "value": "[RootScribe]",
               "type": "string"
             },
             {
@@ -180,9 +180,9 @@
       "parameters": {
         "fromEmail": "={{ $('Config').item.json.from_email }}",
         "toEmail": "={{ $('Config').item.json.recipient_email }}",
-        "subject": "={{ $('Config').item.json.subject_prefix }} {{ $('Applaud Webhook').item.json.body.recording.filename }}",
+        "subject": "={{ $('Config').item.json.subject_prefix }} {{ $('RootScribe Webhook').item.json.body.recording.filename }}",
         "emailFormat": "text",
-        "text": "={{ $json.content[0].text }}\n\n---\nRecording: {{ $('Applaud Webhook').item.json.body.recording.filename }}\nDuration (ms): {{ $('Applaud Webhook').item.json.body.recording.duration_ms }}\nAudio: {{ $('Applaud Webhook').item.json.body.http_urls.audio }}\nTranscript: {{ $('Applaud Webhook').item.json.body.http_urls.transcript }}\nSummary: {{ $('Applaud Webhook').item.json.body.http_urls.summary }}",
+        "text": "={{ $json.content[0].text }}\n\n---\nRecording: {{ $('RootScribe Webhook').item.json.body.recording.filename }}\nDuration (ms): {{ $('RootScribe Webhook').item.json.body.recording.duration_ms }}\nAudio: {{ $('RootScribe Webhook').item.json.body.http_urls.audio }}\nTranscript: {{ $('RootScribe Webhook').item.json.body.http_urls.transcript }}\nSummary: {{ $('RootScribe Webhook').item.json.body.http_urls.summary }}",
         "options": {}
       },
       "id": "b5f18508-a7ec-45dd-a907-27dcf238d753",
@@ -197,7 +197,7 @@
   ],
   "pinData": {},
   "connections": {
-    "Applaud Webhook": {
+    "RootScribe Webhook": {
       "main": [
         [
           {

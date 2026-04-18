@@ -5,7 +5,7 @@ import { startBrowserWatch, subscribeWatch } from "../auth/browser-watch.js";
 import { plaudFetch, PlaudAuthError } from "../plaud/client.js";
 import { updateConfig } from "../config.js";
 import { logger } from "../logger.js";
-import type { AuthDetectResponse, AuthValidateResponse } from "@applaud/shared";
+import type { AuthDetectResponse, AuthValidateResponse } from "@rootscribe/shared";
 
 export const authRouter = Router();
 

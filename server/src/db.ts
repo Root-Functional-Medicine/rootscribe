@@ -8,7 +8,7 @@ import type {
   InboxStatus,
   EffectiveInboxStatus,
   JiraLink,
-} from "@applaud/shared";
+} from "@rootscribe/shared";
 
 let db: Database.Database | null = null;
 

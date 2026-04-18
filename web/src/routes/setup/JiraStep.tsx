@@ -1,6 +1,6 @@
 import { useEffect, useState, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { DEFAULT_CONFIG } from "@applaud/shared";
+import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { api } from "../../api.js";
 
 // Single source of truth — if the RFM URL changes, update DEFAULT_CONFIG in

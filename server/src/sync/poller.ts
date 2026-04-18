@@ -23,7 +23,7 @@ import {
 import { ensureRecordingFolder } from "./layout.js";
 import { fireWebhookForRecording } from "../webhook/post.js";
 import { emit } from "./events.js";
-import type { PlaudRawRecording } from "@applaud/shared";
+import type { PlaudRawRecording } from "@rootscribe/shared";
 
 export interface PollerStatus {
   lastPollAt: number | null;

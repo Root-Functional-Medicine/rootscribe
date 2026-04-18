@@ -1,5 +1,5 @@
 {
-  "name": "@applaud/server",
+  "name": "@rootscribe/server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@applaud/shared": "workspace:*",
+    "@rootscribe/shared": "workspace:*",
     "better-sqlite3": "^12.9.0",
     "classic-level": "^2.0.0",
     "express": "^5.2.1",

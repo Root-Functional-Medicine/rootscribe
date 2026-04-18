@@ -3,20 +3,20 @@ import path from "node:path";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 
 export function configDir(): string {
-  const explicit = process.env.APPLAUD_CONFIG_DIR;
+  const explicit = process.env.ROOTSCRIBE_CONFIG_DIR;
   if (explicit && explicit.length > 0) return explicit;
 
   const plat = platform();
   if (plat === "darwin") {
-    return path.join(homedir(), "Library", "Application Support", "applaud");
+    return path.join(homedir(), "Library", "Application Support", "rootscribe");
   }
   if (plat === "win32") {
     const appData = process.env.APPDATA ?? path.join(homedir(), "AppData", "Roaming");
-    return path.join(appData, "applaud");
+    return path.join(appData, "rootscribe");
   }
   const xdg = process.env.XDG_CONFIG_HOME;
   const base = xdg && xdg.length > 0 ? xdg : path.join(homedir(), ".config");
-  return path.join(base, "applaud");
+  return path.join(base, "rootscribe");
 }
 
 export function ensureConfigDir(): string {
@@ -34,11 +34,11 @@ export function dbPath(): string {
 }
 
 export function logPath(): string {
-  return path.join(configDir(), "applaud.log");
+  return path.join(configDir(), "rootscribe.log");
 }
 
 export function lockPath(): string {
-  return path.join(configDir(), "applaud.lock");
+  return path.join(configDir(), "rootscribe.lock");
 }
 
 export function isWsl(): boolean {

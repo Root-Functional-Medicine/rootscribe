@@ -29,7 +29,7 @@ function acquireLock(): boolean {
         try {
           process.kill(pid, 0);
           // process exists
-          logger.error({ pid }, `applaud already running (PID ${pid}). Refusing to start.`);
+          logger.error({ pid }, `rootscribe already running (PID ${pid}). Refusing to start.`);
           return false;
         } catch {
           // stale lock
@@ -62,7 +62,7 @@ function acquireLock(): boolean {
 }
 
 function shouldOpenBrowser(): boolean {
-  if (process.env.APPLAUD_NO_OPEN === "1") return false;
+  if (process.env.ROOTSCRIBE_NO_OPEN === "1") return false;
   if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT) return false;
   if (process.platform === "linux" && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
     // Allow WSL to still open (wslview handles it), detect via /proc/version
@@ -79,7 +79,7 @@ function shouldOpenBrowser(): boolean {
 async function main(): Promise<void> {
   ensureConfigDir();
   // Skip lock file in Docker — PID reuse makes it unreliable in containers
-  if (!process.env.APPLAUD_CONFIG_DIR && !acquireLock()) {
+  if (!process.env.ROOTSCRIBE_CONFIG_DIR && !acquireLock()) {
     process.exit(1);
   }
 
@@ -124,14 +124,14 @@ async function main(): Promise<void> {
     });
   }
 
-  const bindHost = process.env.APPLAUD_CONFIG_DIR ? "0.0.0.0" : cfg.bind.host;
+  const bindHost = process.env.ROOTSCRIBE_CONFIG_DIR ? "0.0.0.0" : cfg.bind.host;
   const { port } = cfg.bind;
   app.listen(port, bindHost, () => {
     const host = bindHost;
     const url = `http://${host === "0.0.0.0" ? "127.0.0.1" : host}:${port}`;
-    logger.info({ url }, `applaud listening`);
+    logger.info({ url }, `rootscribe listening`);
     // eslint-disable-next-line no-console
-    console.log(`\n▸ applaud is running at ${url}\n`);
+    console.log(`\n▸ rootscribe is running at ${url}\n`);
     if (!cfg.setupComplete) {
       // eslint-disable-next-line no-console
       console.log("  First run detected — opening the setup wizard in your browser.\n");

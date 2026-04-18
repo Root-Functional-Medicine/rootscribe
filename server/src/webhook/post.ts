@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
-import type { WebhookPayload, WebhookEvent, RecordingRow } from "@applaud/shared";
+import type { WebhookPayload, WebhookEvent, RecordingRow } from "@rootscribe/shared";
 import { loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { logger } from "../logger.js";
@@ -99,8 +99,8 @@ async function fireRaw(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "user-agent": "applaud/0.1.0",
-          "x-applaud-event": event,
+          "user-agent": "rootscribe/0.1.0",
+          "x-rootscribe-event": event,
         },
         body,
       });
@@ -164,8 +164,8 @@ function buildTestPayload(): WebhookPayload & { test: true } {
       summary: `${base}/summary.md`,
     },
     content: {
-      transcript_text: "This is a sample transcript from an Applaud test webhook.",
-      summary_markdown: "# Sample Summary\n\nThis is a sample summary from an Applaud test webhook.",
+      transcript_text: "This is a sample transcript from a RootScribe test webhook.",
+      summary_markdown: "# Sample Summary\n\nThis is a sample summary from a RootScribe test webhook.",
     },
   };
 }
@@ -181,9 +181,9 @@ export async function testWebhook(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "user-agent": "applaud/0.1.0",
-        "x-applaud-event": "transcript_ready",
-        "x-applaud-test": "1",
+        "user-agent": "rootscribe/0.1.0",
+        "x-rootscribe-event": "transcript_ready",
+        "x-rootscribe-test": "1",
       },
       body,
     });

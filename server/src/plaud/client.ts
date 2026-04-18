@@ -44,7 +44,7 @@ function getToken(): string {
   return cfg.token;
 }
 
-const USER_AGENT = "applaud/0.1.0 (+https://github.com/rsteckler/applaud)";
+const USER_AGENT = "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)";
 
 export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promise<Response> {
   const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${getPlaudApiBase()}${pathOrUrl}`;

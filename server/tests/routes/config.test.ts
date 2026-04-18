@@ -2,18 +2,18 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
 
-// Capture the caller's original APPLAUD_CONFIG_DIR before the helper
+// Capture the caller's original ROOTSCRIBE_CONFIG_DIR before the helper
 // mutates process.env, so it can be restored in afterAll. Without this, a
 // subsequent test in the same Vitest worker would see this suite's (now
 // deleted) temp dir and either fail loudly or silently touch the user's
 // real config.
-const originalConfigDir = process.env.APPLAUD_CONFIG_DIR;
+const originalConfigDir = process.env.ROOTSCRIBE_CONFIG_DIR;
 
-// Set APPLAUD_CONFIG_DIR BEFORE importing any server module so the config
+// Set ROOTSCRIBE_CONFIG_DIR BEFORE importing any server module so the config
 // cache + db singleton point at a disposable temp directory for the whole
 // suite. If we imported first, the module-level `cached` in server/src/config.ts
 // would latch onto the user's real settings.json.
-const configDir = mkTempConfigDir("applaud-config-route-");
+const configDir = mkTempConfigDir("rootscribe-config-route-");
 
 const { configRouter } = await import("../../src/routes/config.js");
 const { loadConfig, resetConfigCache } = await import("../../src/config.js");
@@ -21,7 +21,7 @@ const { loadConfig, resetConfigCache } = await import("../../src/config.js");
 const app = makeTestApp((a) => a.use("/api/config", configRouter));
 
 // File-level afterAll: runs AFTER every describe block in this file has
-// finished. server/src/paths.ts reads APPLAUD_CONFIG_DIR on every call, so if
+// finished. server/src/paths.ts reads ROOTSCRIBE_CONFIG_DIR on every call, so if
 // we restored + deleted the temp dir in the GET block's afterAll, the POST
 // block (which runs after in source order) would point at a nonexistent
 // directory — or worse, at the caller's real config dir. Keeping the
@@ -30,8 +30,8 @@ const app = makeTestApp((a) => a.use("/api/config", configRouter));
 afterAll(() => {
   resetConfigCache();
   cleanupTempDir(configDir);
-  if (originalConfigDir == null) delete process.env.APPLAUD_CONFIG_DIR;
-  else process.env.APPLAUD_CONFIG_DIR = originalConfigDir;
+  if (originalConfigDir == null) delete process.env.ROOTSCRIBE_CONFIG_DIR;
+  else process.env.ROOTSCRIBE_CONFIG_DIR = originalConfigDir;
 });
 
 describe("GET /api/config", () => {

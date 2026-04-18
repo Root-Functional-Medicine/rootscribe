@@ -11,7 +11,7 @@ export default defineProject({
   plugins: [react()],
   resolve: {
     alias: {
-      "@applaud/shared": sharedSrc,
+      "@rootscribe/shared": sharedSrc,
     },
   },
   test: {

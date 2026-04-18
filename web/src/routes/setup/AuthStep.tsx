@@ -97,7 +97,7 @@ export function AuthStep({
         <span className="font-label text-primary text-xs font-bold tracking-widest uppercase">Step 2</span>
         <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Connect Your Plaud Account</h1>
         <p className="text-on-surface-variant text-base max-w-md leading-relaxed">
-          Applaud authenticates by reading your existing Plaud session from Chrome.
+          RootScribe authenticates by reading your existing Plaud session from Chrome.
         </p>
       </div>
 

@@ -41,7 +41,7 @@ export function SetupWizard(): JSX.Element {
         <header className="space-y-6 mb-10">
           <div className="flex items-center justify-between">
             <span className="text-2xl font-black text-on-surface">
-              Applaud<span className="text-primary">.</span>
+              RootScribe<span className="text-primary">.</span>
             </span>
             <span className="font-label text-xs uppercase tracking-widest text-on-surface-variant">
               Setup Wizard &bull; {pct}%

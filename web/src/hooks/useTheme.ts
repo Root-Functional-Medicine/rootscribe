@@ -16,7 +16,7 @@ export const ThemeContext = createContext<ThemeContextValue>({
 
 export function useThemeProvider(): ThemeContextValue {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem("applaud-theme");
+    const saved = localStorage.getItem("rootscribe-theme");
     if (saved === "dark" || saved === "light") return saved;
     return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
   });
@@ -28,7 +28,7 @@ export function useThemeProvider(): ThemeContextValue {
     } else {
       root.classList.remove("dark");
     }
-    localStorage.setItem("applaud-theme", theme);
+    localStorage.setItem("rootscribe-theme", theme);
   }, [theme]);
 
   const setTheme = useCallback((t: Theme) => setThemeState(t), []);
