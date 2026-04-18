@@ -89,11 +89,16 @@ export interface SeedRecording {
   channel_notified_at?: number | null;
 }
 
-// Helper that distinguishes "caller omitted the key" (use sensible default)
-// from "caller passed null" (honor the null). `??` collapses both into null,
-// which hid tests that wanted to seed a pending-transcript recording.
+// Helper that distinguishes "no value provided" (use sensible default) from
+// "caller passed null" (honor the null). `??` collapses both null and
+// undefined, which hid tests that wanted to seed a pending-transcript
+// recording. We treat explicit `undefined` the same as omission so
+// `{ snoozed_until: undefined }` doesn't accidentally bind NULL into a
+// NOT NULL column via better-sqlite3; callers who need NULL must pass it
+// explicitly.
 function pick<T>(obj: SeedRecording, key: keyof SeedRecording, fallback: T): T | null {
-  return key in obj ? (obj[key] as T | null) : fallback;
+  const value = obj[key];
+  return value === undefined ? fallback : (value as T | null);
 }
 
 export function seedRecording(

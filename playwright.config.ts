@@ -2,6 +2,9 @@ import { defineConfig, devices } from "@playwright/test";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 // Locally `pnpm dev` starts Vite on 44470 (serving the SPA) and Express on
 // 44471 (serving /api + /media, proxied through Vite). In dev mode the Express
@@ -21,13 +24,23 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 // to the server: server/src/paths.ts treats an empty APPLAUD_CONFIG_DIR as
 // "unset" and falls back to ~/Library/Application Support/applaud, which
 // would let local E2E runs read and mutate the user's real settings.json.
-const E2E_CONFIG_DIR =
+const explicitConfigDir =
   process.env.APPLAUD_CONFIG_DIR && process.env.APPLAUD_CONFIG_DIR.length > 0
     ? process.env.APPLAUD_CONFIG_DIR
-    : mkdtempSync(path.join(tmpdir(), "applaud-e2e-"));
+    : null;
+
+const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(path.join(tmpdir(), "applaud-e2e-"));
+
+// globalTeardown needs to know whether the directory was auto-created so it
+// doesn't delete a caller-supplied one. Passed through the environment
+// because Playwright's teardown runs in a different process from config load.
+if (!explicitConfigDir) {
+  process.env.APPLAUD_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalTeardown: path.join(here, "tests", "e2e", "global-teardown.ts"),
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
