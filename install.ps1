@@ -1,7 +1,7 @@
 # rootscribe installer for Windows
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/v0.5.6/install.ps1 | iex
 #
 # What it does:
 #   1. Ensures git is available.

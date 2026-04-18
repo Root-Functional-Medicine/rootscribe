@@ -115,7 +115,7 @@ export function Settings(): JSX.Element {
             </div>
             <div>
               <h2 className="text-3xl font-bold tracking-tight text-on-surface">Sync Status</h2>
-              <p className="text-on-surface-variant text-sm mt-1">Real-time health of your local rootscribe instance.</p>
+              <p className="text-on-surface-variant text-sm mt-1">Real-time health of your local RootScribe instance.</p>
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3 w-full md:w-auto">

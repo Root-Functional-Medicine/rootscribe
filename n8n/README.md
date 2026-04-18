@@ -48,4 +48,4 @@ RootScribe posts JSON with this shape (see `shared/src/recording.ts`):
 }
 ```
 
-The `rootscribe.test` button on the Settings page posts a fully-populated sample of the above (with `test: true` and an `x-rootscribe-test: 1` header) so n8n's field mapper sees every key up front.
+The **Test** button on the Settings page posts a fully-populated sample of the above (with `test: true` and an `x-rootscribe-test: 1` header) so n8n's field mapper sees every key up front.
