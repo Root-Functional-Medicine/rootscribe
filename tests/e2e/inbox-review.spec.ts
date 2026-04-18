@@ -5,7 +5,13 @@ import { test, expect } from "@playwright/test";
 // snoozed in the fixture). Each test starts from a clean DB snapshot.
 
 test.beforeEach(async ({ request }) => {
-  await request.post("/api/_test/reset");
+  // Assert the reset actually succeeded — a 404 here means /api/_test/* is
+  // not mounted (e.g. Playwright reused a non-E2E server), in which case
+  // the test would otherwise run against whatever state is on disk and
+  // could mutate a developer's real config/DB.
+  const response = await request.post("/api/_test/reset");
+  expect(response.ok()).toBeTruthy();
+  await expect(response.json()).resolves.toEqual({ ok: true });
 });
 
 test.describe("Inbox review workflow", () => {
