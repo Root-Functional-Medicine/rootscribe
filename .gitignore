@@ -10,3 +10,8 @@ recordings/
 *.tsbuildinfo
 .vite/
 .claude/
+coverage/
+**/coverage/
+playwright-report/
+test-results/
+.vitest-temp/
