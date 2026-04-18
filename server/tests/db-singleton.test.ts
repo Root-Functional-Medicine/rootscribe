@@ -8,6 +8,7 @@ const originalConfigDir = process.env.ROOTSCRIBE_CONFIG_DIR;
 const configDir = mkTempConfigDir("rootscribe-db-singleton-");
 
 const { getDb, resetDbSingleton } = await import("../src/db.js");
+const { logger } = await import("../src/logger.js");
 
 afterAll(() => {
   resetDbSingleton();
@@ -55,9 +56,17 @@ describe("resetDbSingleton", () => {
     const closeSpy = vi.spyOn(cached, "close").mockImplementation(() => {
       throw new Error("simulated: database is locked — open statements");
     });
+    // Silence the warn call so pino's async file writer doesn't race the
+    // afterAll cleanupTempDir. (The assertion that warn is CALLED still
+    // runs — we just intercept the payload in memory.)
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
 
     // Should NOT throw — resetDbSingleton swallows the close error and logs.
     expect(() => resetDbSingleton()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error) }),
+      expect.stringContaining("resetDbSingleton"),
+    );
 
     // Next getDb() should return the SAME (still-cached) handle, not a new one,
     // because close() failed and we refused to null the cache.
@@ -65,6 +74,7 @@ describe("resetDbSingleton", () => {
     expect(stillCached).toBe(cached);
 
     closeSpy.mockRestore();
+    warnSpy.mockRestore();
     // Actually close the handle so the rest of the suite starts clean.
     resetDbSingleton();
   });
