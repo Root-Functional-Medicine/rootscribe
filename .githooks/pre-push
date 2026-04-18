@@ -23,9 +23,9 @@ if [[ -z "${remote_name}" && -z "${remote_url}" ]]; then
 fi
 
 case "${remote_url}" in
-  *rsteckler/applaud*|*rsteckler/rootscribe*)
+  *rsteckler/applaud*)
     printf '\033[1;31m✗ BLOCKED:\033[0m push target %s resolves to rsteckler/applaud.\n' "${remote_name}" >&2
-    printf '\n  RootScribe is a fork — %s must never receive internal changes.\n' "rsteckler/applaud" >&2
+    printf '\n  RootScribe is a fork — rsteckler/applaud must never receive internal changes.\n' >&2
     printf '  Push to \033[1morigin\033[0m (Root-Functional-Medicine/rootscribe) instead:\n\n' >&2
     printf '    git push origin HEAD\n\n' >&2
     printf '  If you genuinely need to push to upstream, do it from an rsteckler/applaud\n' >&2
