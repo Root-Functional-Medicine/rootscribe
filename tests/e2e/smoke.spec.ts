@@ -1,9 +1,12 @@
 import { test, expect } from "@playwright/test";
 
-// Smoke-level checks against the seeded config populated by global-setup.ts.
-// Every other journey spec assumes the same fixtures (12 recordings, a
-// pre-linked ROOT-101, etc.); this file is the canary that catches broken
-// boot / routing / static-asset plumbing before those richer assertions run.
+// Smoke-level checks against the seeded config populated by
+// playwright.config.ts at module-load time (global-setup.ts is
+// validation-only — it POSTs to /api/_test/reset to prove the E2E gate is
+// mounted, it does not seed). Every other journey spec assumes the same
+// fixtures (12 recordings, a pre-linked ROOT-101, etc.); this file is the
+// canary that catches broken boot / routing / static-asset plumbing before
+// those richer assertions run.
 
 test.describe("RootScribe smoke (seeded)", () => {
   test("GET / renders the dashboard directly — setupComplete is true in the fixture", async ({

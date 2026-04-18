@@ -19,28 +19,55 @@ const DEFAULT_PORT = process.env.CI ? 44471 : 44470;
 const PORT = Number(process.env.ROOTSCRIBE_E2E_PORT ?? DEFAULT_PORT);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
-// Resolve the server process's config dir at Playwright load time. If the
-// caller (CI, local dev) explicitly set ROOTSCRIBE_CONFIG_DIR, honor it —
-// otherwise mint a disposable tmp dir. We must NEVER pass an empty string
-// to the server: server/src/paths.ts treats an empty ROOTSCRIBE_CONFIG_DIR as
-// "unset" and falls back to ~/Library/Application Support/rootscribe, which
-// would let local E2E runs read and mutate the user's real settings.json.
-const explicitConfigDir =
+// Resolve the server process's config dir at Playwright load time.
+// seedInitialState() wipes state.sqlite and overwrites settings.json, so we
+// MUST NEVER point it at a caller-supplied ROOTSCRIBE_CONFIG_DIR — that
+// would clobber a developer's real config if they forgot to unset the env
+// var. Always mint a dedicated tmp dir unless the caller opts in via
+// ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR=1.
+//
+// Complication: Playwright re-executes this config file in every worker
+// process. On the first load, we mint a dir under `$TMPDIR/rootscribe-e2e-*`
+// and set process.env.ROOTSCRIBE_CONFIG_DIR to it. On subsequent re-loads,
+// we see our own minted dir in the env and must NOT treat it as a
+// "caller-supplied" dir — otherwise every worker throws the guard error.
+// Recognize our minted pattern by prefix so re-loads can skip re-minting.
+const MINTED_PREFIX = path.join(tmpdir(), "rootscribe-e2e-");
+const allowSuppliedDir = process.env.ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR === "1";
+const envDir =
   process.env.ROOTSCRIBE_CONFIG_DIR && process.env.ROOTSCRIBE_CONFIG_DIR.length > 0
     ? process.env.ROOTSCRIBE_CONFIG_DIR
     : null;
+const isOurMintedDir = envDir !== null && envDir.startsWith(MINTED_PREFIX);
 
-const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(path.join(tmpdir(), "rootscribe-e2e-"));
+if (envDir && !isOurMintedDir && !allowSuppliedDir) {
+  throw new Error(
+    `playwright.config.ts refused to seed into ROOTSCRIBE_CONFIG_DIR=${envDir} — ` +
+      `seedInitialState() wipes state.sqlite and overwrites settings.json, which would ` +
+      `destroy real user data. Unset ROOTSCRIBE_CONFIG_DIR or, if you genuinely want to ` +
+      `target that directory (e.g. a throwaway CI scratch dir), set ` +
+      `ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR=1 alongside it.`,
+  );
+}
+
+// "explicit" here = caller-provided and explicitly allowed (either because
+// it's one we minted on a previous load, or because the opt-in flag is set).
+// Any other existing dir was rejected by the guard above.
+const explicitConfigDir = isOurMintedDir || allowSuppliedDir ? envDir : null;
+const E2E_CONFIG_DIR = explicitConfigDir ?? mkdtempSync(MINTED_PREFIX);
+const shouldSeed = !isOurMintedDir;
 
 // globalTeardown needs to know whether the directory was auto-created so it
 // doesn't delete a caller-supplied one. Passed through the environment
 // because Playwright's teardown runs in a different process from config load.
-if (!explicitConfigDir) {
+// Only set it when WE minted the dir on this load (i.e. first main-process
+// load; worker re-loads that see a pre-minted env var don't re-mint).
+if (shouldSeed && !allowSuppliedDir) {
   process.env.ROOTSCRIBE_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
 }
 
-// Make the resolved dir visible to globalSetup (which re-seeds between
-// retries) and — via `webServer.env` — the server subprocess.
+// Make the resolved dir visible to globalSetup and — via `webServer.env` —
+// the server subprocess.
 process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
 
 // Seed the config dir HERE, at config-load time, instead of in globalSetup.
@@ -60,7 +87,12 @@ process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
 //       bind.port there would break that proxy. Playwright hits Vite
 //       (PORT=44470), which proxies to Express on 44471.
 const SERVER_PORT = process.env.CI ? PORT : 44471;
-seedInitialState(E2E_CONFIG_DIR, { port: SERVER_PORT });
+// Skip re-seed on worker re-loads — the main process already seeded, and
+// writing here again while the server has open handles on state.sqlite
+// risks file-lock errors and database races.
+if (shouldSeed) {
+  seedInitialState(E2E_CONFIG_DIR, { port: SERVER_PORT });
+}
 
 export default defineConfig({
   testDir: "./tests/e2e",

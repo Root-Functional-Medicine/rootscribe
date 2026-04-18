@@ -125,7 +125,7 @@ describe("seedInitialState", () => {
     expect(linkCount).toBe(SEED_JIRA_LINKS.length);
   });
 
-  it("creates one folder per seed recording with transcript.txt and metadata.json", () => {
+  it("creates one folder per seed recording with transcript.txt/json and metadata.json", () => {
     seedInitialState(configDir);
 
     const recordingsDir = path.join(configDir, "recordings");
@@ -133,6 +133,9 @@ describe("seedInitialState", () => {
       const folder = path.join(recordingsDir, rec.folder);
       expect(existsSync(folder)).toBe(true);
       expect(existsSync(path.join(folder, "transcript.txt"))).toBe(true);
+      // transcript.json mirrors the path the seeded DB row's transcript_path
+      // points at — must exist on disk or the media router 404s.
+      expect(existsSync(path.join(folder, "transcript.json"))).toBe(true);
       expect(existsSync(path.join(folder, "metadata.json"))).toBe(true);
     }
   });

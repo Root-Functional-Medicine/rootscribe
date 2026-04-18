@@ -269,6 +269,23 @@ function writeRecordingFiles(recordingsDir: string, rec: SeedRecording): void {
     path.join(folder, "transcript.txt"),
     `[00:00] Speaker 1: placeholder transcript for ${rec.filename}\n[00:05] Speaker 2: end of placeholder.\n`,
   );
+  // transcript.json mirrors the server's "downloaded transcript" schema
+  // loosely enough to make media serving and webhook payloads work. The
+  // seeded DB rows claim transcript_downloaded_at != null and point
+  // transcript_path at this file, so a placeholder must exist on disk or
+  // /media/<folder>/transcript.json would 404 under the fixture.
+  writeFileSync(
+    path.join(folder, "transcript.json"),
+    JSON.stringify(
+      {
+        segments: [
+          { start: 0, end: 5, speaker: "1", text: `placeholder transcript for ${rec.filename}` },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
   writeFileSync(
     path.join(folder, "metadata.json"),
     JSON.stringify({ id: rec.id, filename: rec.filename }, null, 2),

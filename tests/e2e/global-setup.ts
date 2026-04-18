@@ -17,6 +17,10 @@ import type { FullConfig } from "@playwright/test";
 //      correctly-scoped port written at config-load time whenever CI runs
 //      with ROOTSCRIBE_E2E_PORT set.
 
+async function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default async function globalSetup(config: FullConfig): Promise<void> {
   const baseURL = config.webServer?.url;
   if (!baseURL) {
@@ -25,15 +29,44 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
     );
   }
 
-  let response: Response;
-  try {
-    response = await fetch(`${baseURL}/api/_test/reset`, { method: "POST" });
-  } catch (err) {
+  // In local dev, Playwright's webServer.url only waits for Vite (port 44470)
+  // to respond. Vite starts faster than Express (two processes spawned in
+  // parallel by `pnpm dev`), so the first POST can race against Express still
+  // booting — surfacing as HTTP 502 from Vite's proxy. Retry a few times with
+  // short backoff to ride out the gap without masking a legitimate failure.
+  const MAX_ATTEMPTS = 10;
+  const BACKOFF_MS = 500;
+  let response: Response | undefined;
+  let lastTransportError: unknown;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      response = await fetch(`${baseURL}/api/_test/reset`, { method: "POST" });
+      // 502/503 means a proxy (Vite) is up but the upstream (Express) isn't —
+      // retry. Any other non-OK is terminal.
+      if (response.status === 502 || response.status === 503) {
+        if (attempt < MAX_ATTEMPTS) {
+          await sleep(BACKOFF_MS);
+          continue;
+        }
+      }
+      lastTransportError = undefined;
+      break;
+    } catch (err) {
+      lastTransportError = err;
+      if (attempt < MAX_ATTEMPTS) {
+        await sleep(BACKOFF_MS);
+        continue;
+      }
+    }
+  }
+
+  if (!response) {
     throw new Error(
-      `global-setup failed to reach ${baseURL}/api/_test/reset. ` +
+      `global-setup failed to reach ${baseURL}/api/_test/reset after ${MAX_ATTEMPTS} attempts. ` +
         `The webServer at ${baseURL} isn't responding. Check the ` +
         `[WebServer] output above for startup errors.`,
-      { cause: err },
+      { cause: lastTransportError },
     );
   }
 
@@ -48,7 +81,7 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
 
   if (!response.ok) {
     throw new Error(
-      `global-setup: POST ${baseURL}/api/_test/reset returned HTTP ${response.status}. ` +
+      `global-setup: POST ${baseURL}/api/_test/reset returned HTTP ${response.status} after ${MAX_ATTEMPTS} attempts. ` +
         `Expected 200 — the E2E test routes exist but the reset failed. Check server logs.`,
     );
   }
