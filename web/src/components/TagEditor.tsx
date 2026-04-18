@@ -1,21 +1,29 @@
-import { useState, type KeyboardEvent } from "react";
+import { useId, useState, type KeyboardEvent } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RecordingDetail } from "@applaud/shared";
+import type { InboxMutationResponse } from "@applaud/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
 
 interface TagEditorProps {
   recordingId: string;
   tags: string[];
+  // Corpus of every tag used across all recordings. Rendered as a datalist so
+  // the browser offers existing tags as suggestions — keeps the user on the
+  // established taxonomy instead of creating near-duplicates like
+  // `client-intake` vs `client_intake`.
+  availableTags: string[];
 }
 
-export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
+export function TagEditor({ recordingId, tags, availableTags }: TagEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [draft, setDraft] = useState("");
+  // Multiple TagEditors can't coexist on one page today, but useId guarantees
+  // the <datalist>/<input> pair stays unique even if that changes later.
+  const listId = useId();
 
   const addTag = useMutation({
     mutationFn: (tag: string) => api.addTag(recordingId, tag),
-    onSuccess: (response: { recording: RecordingDetail }) => {
+    onSuccess: (response: InboxMutationResponse) => {
       applyRecordingMutation(qc, recordingId, response);
       // Only clear the input after the server confirms — a failed request
       // (network error, server validation) preserves what the user typed so
@@ -25,7 +33,7 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
   });
   const removeTag = useMutation({
     mutationFn: (tag: string) => api.removeTag(recordingId, tag),
-    onSuccess: (response: { recording: RecordingDetail }) =>
+    onSuccess: (response: InboxMutationResponse) =>
       applyRecordingMutation(qc, recordingId, response),
   });
 
@@ -85,7 +93,13 @@ export function TagEditor({ recordingId, tags }: TagEditorProps): JSX.Element {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKey}
+          list={listId}
         />
+        <datalist id={listId}>
+          {availableTags.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
         <button
           onClick={commit}
           disabled={!draft.trim() || addTag.isPending}

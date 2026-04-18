@@ -70,6 +70,11 @@ export interface RecordingDetailResponse {
   recording: RecordingDetail;
   mediaBase: string;
   recordingsDir?: string;
+  // Autocomplete facets for the detail-page editors. Surfaced here (instead of
+  // requiring a second call to the list endpoint with `?facets=1`) so the tag
+  // and category editors can suggest existing values as the user types.
+  availableTags: string[];
+  availableCategories: string[];
 }
 
 // Inbox mutation payloads. Kept in shared so the web client and server use the
@@ -117,6 +122,11 @@ export interface InboxJiraLinkRequest {
 
 export interface InboxMutationResponse {
   recording: RecordingDetail;
+  // Refreshed autocomplete facets so a newly-added tag or category appears in
+  // suggestions without a follow-up fetch. Present on every mutation response
+  // because add/remove/setCategory can each change the DISTINCT sets.
+  availableTags: string[];
+  availableCategories: string[];
 }
 
 export interface SyncStatusResponse {

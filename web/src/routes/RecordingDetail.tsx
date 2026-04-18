@@ -201,7 +201,7 @@ export function RecordingDetailPage(): JSX.Element {
       </div>
     );
 
-  const { recording: r, mediaBase } = q.data;
+  const { recording: r, mediaBase, availableTags, availableCategories } = q.data;
 
   const del = async (): Promise<void> => {
     if (!confirm("Delete the local copy of this recording? (Plaud is unaffected.)")) return;
@@ -389,13 +389,17 @@ export function RecordingDetailPage(): JSX.Element {
                 <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
                   Category
                 </div>
-                <CategoryEditor recordingId={r.id} category={r.category} />
+                <CategoryEditor
+                  recordingId={r.id}
+                  category={r.category}
+                  availableCategories={availableCategories}
+                />
               </div>
               <div>
                 <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
                   Tags
                 </div>
-                <TagEditor recordingId={r.id} tags={r.tags} />
+                <TagEditor recordingId={r.id} tags={r.tags} availableTags={availableTags} />
               </div>
               <div>
                 <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">

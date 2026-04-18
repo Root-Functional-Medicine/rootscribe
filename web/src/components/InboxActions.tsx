@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RecordingDetail, InboxStatus } from "@applaud/shared";
+import type { RecordingDetail, InboxStatus, InboxMutationResponse } from "@applaud/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
 import { SnoozeMenu } from "./SnoozeMenu.js";
@@ -18,7 +18,7 @@ export function InboxActions({ recording }: InboxActionsProps): JSX.Element {
   const [snoozeOpen, setSnoozeOpen] = useState(false);
   const snoozeToggleRef = useRef<HTMLButtonElement>(null);
 
-  const applyResponse = (response: { recording: RecordingDetail }): void =>
+  const applyResponse = (response: InboxMutationResponse): void =>
     applyRecordingMutation(qc, recording.id, response);
 
   const setStatus = useMutation({

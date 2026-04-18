@@ -127,6 +127,11 @@ function migrate(d: Database.Database): void {
     safeDdl("ALTER TABLE recordings ADD COLUMN channel_notified_at INTEGER");
 
     d.prepare("CREATE INDEX IF NOT EXISTS idx_recordings_inbox_status ON recordings(inbox_status, start_time DESC)").run();
+    // Index supports `SELECT DISTINCT category ... ORDER BY category` in
+    // loadAllCategories(), which runs on every recording-detail read and every
+    // inbox mutation. Without this, the DISTINCT+sort degrades to a full
+    // table scan of recordings as the dataset grows.
+    d.prepare("CREATE INDEX IF NOT EXISTS idx_recordings_category ON recordings(category)").run();
 
     d.prepare(`
       CREATE TABLE IF NOT EXISTS recording_jira_links (

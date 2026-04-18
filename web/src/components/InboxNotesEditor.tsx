@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RecordingDetail } from "@applaud/shared";
+import type { InboxMutationResponse } from "@applaud/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
 
@@ -22,7 +22,7 @@ export function InboxNotesEditor({ recordingId, notes }: InboxNotesEditorProps):
 
   const mutation = useMutation({
     mutationFn: (value: string | null) => api.setInboxNotes(recordingId, value),
-    onSuccess: (response: { recording: RecordingDetail }) =>
+    onSuccess: (response: InboxMutationResponse) =>
       applyRecordingMutation(qc, recordingId, response),
   });
 
