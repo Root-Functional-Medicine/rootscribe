@@ -154,6 +154,13 @@ async function main(): Promise<void> {
         // eslint-disable-next-line no-console
         console.log(`  (Headless host detected. Open ${url}/setup manually.)\n`);
       }
+    } else if (process.env[E2E_FLAG] === "1") {
+      // Under the E2E harness, the seeded settings.json has setupComplete=true
+      // and a placeholder token. Starting the poller here would trigger
+      // outbound Plaud API calls with a fake bearer (producing noisy 401s)
+      // and — more importantly — could mutate state.sqlite mid-test when a
+      // response does land. Skip it so Playwright's state is deterministic.
+      logger.warn("E2E mode — skipping poller.start() to keep test state deterministic");
     } else {
       poller.start();
     }

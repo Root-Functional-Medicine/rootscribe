@@ -9,11 +9,13 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  SEED_CONFIG,
+  DEFAULT_BIND_PORT,
+  SEED_CONFIG_BASE,
   SEED_JIRA_LINKS,
   SEED_RECORDINGS,
   SEED_TAGS,
   resetMutableState,
+  seedConfig,
   seedInitialState,
 } from "./fixtures.js";
 
@@ -57,9 +59,14 @@ describe("SEED fixture data", () => {
     expect(new Set(SEED_TAGS.map((t) => t.recordingId)).size).toBeGreaterThanOrEqual(3);
   });
 
-  it("defaults SEED_CONFIG to setupComplete=true and a placeholder token", () => {
-    expect(SEED_CONFIG.setupComplete).toBe(true);
-    expect(SEED_CONFIG.token).toMatch(/e2e/);
+  it("defaults SEED_CONFIG_BASE to setupComplete=true and a placeholder token", () => {
+    expect(SEED_CONFIG_BASE.setupComplete).toBe(true);
+    expect(SEED_CONFIG_BASE.token).toMatch(/e2e/);
+  });
+
+  it("seedConfig() defaults bind.port to DEFAULT_BIND_PORT but honors an override", () => {
+    expect(seedConfig().bind.port).toBe(DEFAULT_BIND_PORT);
+    expect(seedConfig(9999).bind.port).toBe(9999);
   });
 });
 
@@ -140,11 +147,39 @@ describe("seedInitialState", () => {
       .get()!.c;
     db.close();
 
-    // Second call opens the existing DB, so row count stays at the seed size
-    // (INSERTs are silently ignored on PRIMARY KEY conflict — or the INSERT
-    // throws inside transaction and the whole re-seed is rolled back).
-    // Either way, the row count must still be exactly the seed size.
+    // seedInitialState wipes state.sqlite (and its WAL/SHM siblings) before
+    // creating a fresh DB, so the second call starts from an empty schema
+    // and re-inserts the full seed set. The row count must match exactly
+    // the seed size — proving we're not accumulating duplicates or leaving
+    // rows from the first call.
     expect(count).toBe(SEED_RECORDINGS.length);
+  });
+
+  it("accepts a port override and writes it into settings.json", () => {
+    seedInitialState(configDir, { port: 54321 });
+
+    const settings = JSON.parse(
+      readFileSync(path.join(configDir, "settings.json"), "utf8"),
+    );
+    expect(settings.bind.port).toBe(54321);
+  });
+
+  it("writes absolute audio/transcript/metadata paths into each recording row", () => {
+    seedInitialState(configDir);
+
+    const db = new Database(path.join(configDir, "state.sqlite"));
+    const row = db
+      .prepare<[string], { audio_path: string; transcript_path: string; metadata_path: string }>(
+        "SELECT audio_path, transcript_path, metadata_path FROM recordings WHERE id = ?",
+      )
+      .get(SEED_RECORDINGS[0]!.id)!;
+    db.close();
+
+    const recordingsDir = path.join(configDir, "recordings");
+    expect(path.isAbsolute(row.audio_path)).toBe(true);
+    expect(row.audio_path.startsWith(recordingsDir)).toBe(true);
+    expect(row.transcript_path.startsWith(recordingsDir)).toBe(true);
+    expect(row.metadata_path.startsWith(recordingsDir)).toBe(true);
   });
 });
 

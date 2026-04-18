@@ -49,7 +49,18 @@ process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
 // already latched onto an empty settings.json. Writing at config-load time
 // guarantees the fixtures exist before `pnpm start:nobuild` / `pnpm dev`
 // forks.
-seedInitialState(E2E_CONFIG_DIR);
+//
+// Resolve the port Express will bind to, separate from the port Playwright
+// connects to:
+//   CI: Express serves both SPA + API, so bind.port must equal PORT
+//       (which itself honors ROOTSCRIBE_E2E_PORT). Playwright hits Express
+//       directly.
+//   local dev: Vite's proxy (see web/vite.config.ts) is hard-coded to
+//       forward /api and /media to 127.0.0.1:44471. Changing Express's
+//       bind.port there would break that proxy. Playwright hits Vite
+//       (PORT=44470), which proxies to Express on 44471.
+const SERVER_PORT = process.env.CI ? PORT : 44471;
+seedInitialState(E2E_CONFIG_DIR, { port: SERVER_PORT });
 
 export default defineConfig({
   testDir: "./tests/e2e",

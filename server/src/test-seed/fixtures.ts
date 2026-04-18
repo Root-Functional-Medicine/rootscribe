@@ -236,14 +236,24 @@ export const SEED_JIRA_LINKS: SeedJiraLink[] = [
   },
 ];
 
-export const SEED_CONFIG = {
+// DEFAULT_BIND_PORT matches the production default; override per-run via
+// seedInitialState({ port }) when a caller (e.g. Playwright with
+// ROOTSCRIBE_E2E_PORT) wants the server on a different port.
+export const DEFAULT_BIND_PORT = 44471;
+
+export const SEED_CONFIG_BASE = {
   setupComplete: true,
   token: "e2e-fake-token",
   pollIntervalMinutes: 10,
   jiraBaseUrl: "https://example.atlassian.net/browse/",
   webhook: null,
-  bind: { host: "127.0.0.1", port: 44471 },
 } as const;
+
+export function seedConfig(port: number = DEFAULT_BIND_PORT): typeof SEED_CONFIG_BASE & {
+  bind: { host: string; port: number };
+} {
+  return { ...SEED_CONFIG_BASE, bind: { host: "127.0.0.1", port } };
+}
 
 function silentOggPath(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
@@ -332,7 +342,7 @@ function applySchema(d: Database.Database): void {
   for (const stmt of SCHEMA_DDL) d.prepare(stmt).run();
 }
 
-function insertSeedRows(d: Database.Database): void {
+function insertSeedRows(d: Database.Database, recordingsDir: string): void {
   const insertRecording = d.prepare(`
     INSERT INTO recordings (
       id, filename, start_time, end_time, duration_ms, filesize_bytes,
@@ -358,11 +368,15 @@ function insertSeedRows(d: Database.Database): void {
 
   d.transaction(() => {
     for (const rec of SEED_RECORDINGS) {
+      // Absolute paths so server-side reads (media router, transcript_text
+      // backfill in db.ts migrate(), recordings-route transcript.txt lookup)
+      // resolve correctly regardless of process.cwd().
+      const recordingDir = path.join(recordingsDir, rec.folder);
       insertRecording.run({
         ...rec,
-        audioPath: `${rec.folder}/audio.ogg`,
-        transcriptPath: `${rec.folder}/transcript.json`,
-        metadataPath: `${rec.folder}/metadata.json`,
+        audioPath: path.join(recordingDir, "audio.ogg"),
+        transcriptPath: path.join(recordingDir, "transcript.json"),
+        metadataPath: path.join(recordingDir, "metadata.json"),
       });
     }
     for (const tag of SEED_TAGS) insertTag.run(tag.recordingId, tag.tag);
@@ -378,13 +392,24 @@ function insertSeedRows(d: Database.Database): void {
   })();
 }
 
-export function seedInitialState(configDir: string): void {
+export interface SeedOptions {
+  // Bind port written into settings.json. Callers that honor
+  // ROOTSCRIBE_E2E_PORT (e.g. playwright.config.ts) pass the resolved port
+  // here so the server and the Playwright BASE_URL can't diverge. Defaults
+  // to DEFAULT_BIND_PORT.
+  port?: number;
+}
+
+export function seedInitialState(
+  configDir: string,
+  opts: SeedOptions = {},
+): void {
   mkdirSync(configDir, { recursive: true });
 
   const recordingsDir = path.join(configDir, "recordings");
   mkdirSync(recordingsDir, { recursive: true });
 
-  const settings = { ...SEED_CONFIG, recordingsDir };
+  const settings = { ...seedConfig(opts.port), recordingsDir };
   writeFileSync(
     path.join(configDir, "settings.json"),
     JSON.stringify(settings, null, 2),
@@ -403,7 +428,7 @@ export function seedInitialState(configDir: string): void {
   fresh.pragma("journal_mode = WAL");
   fresh.pragma("foreign_keys = ON");
   applySchema(fresh);
-  insertSeedRows(fresh);
+  insertSeedRows(fresh, recordingsDir);
   fresh.close();
 
   for (const rec of SEED_RECORDINGS) writeRecordingFiles(recordingsDir, rec);
