@@ -1,21 +1,21 @@
-# applaud installer for Windows
+# rootscribe installer for Windows
 #
 # Usage:
-#   irm https://raw.githubusercontent.com/rsteckler/applaud/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/main/install.ps1 | iex
 #
 # What it does:
 #   1. Ensures git is available.
 #   2. Installs pnpm (via the official installer) if not already present.
 #   3. Ensures Node.js >= 20 is available (installs via pnpm if missing).
-#   4. Clones the applaud repo into .\applaud (or $env:APPLAUD_DIR).
+#   4. Clones the rootscribe repo into .\rootscribe (or $env:ROOTSCRIBE_DIR).
 #   5. Runs `pnpm install` and `pnpm build`.
-#   6. Prints the commands to start applaud.
+#   6. Prints the commands to start rootscribe.
 
 $ErrorActionPreference = 'Stop'
 
-$RepoUrl    = if ($env:APPLAUD_REPO) { $env:APPLAUD_REPO } else { 'https://github.com/rsteckler/applaud.git' }
-$RepoRef    = if ($env:APPLAUD_REF)  { $env:APPLAUD_REF }  else { 'v0.5.5' }
-$InstallDir = if ($env:APPLAUD_DIR)  { $env:APPLAUD_DIR }  else { Join-Path $PWD 'applaud' }
+$RepoUrl    = if ($env:ROOTSCRIBE_REPO) { $env:ROOTSCRIBE_REPO } else { 'https://github.com/Root-Functional-Medicine/rootscribe.git' }
+$RepoRef    = if ($env:ROOTSCRIBE_REF)  { $env:ROOTSCRIBE_REF }  else { 'v0.5.5' }
+$InstallDir = if ($env:ROOTSCRIBE_DIR)  { $env:ROOTSCRIBE_DIR }  else { Join-Path $PWD 'rootscribe' }
 $MinNodeMajor = 20
 
 function Say($msg)  { Write-Host "==> $msg" -ForegroundColor Cyan }
@@ -99,7 +99,7 @@ function Clone-Repo {
                 if ($LASTEXITCODE -ne 0) { Fail "git pull failed in $InstallDir" }
                 return
             }
-            Fail "$InstallDir exists and is not empty. Set `$env:APPLAUD_DIR to a different path, or remove it."
+            Fail "$InstallDir exists and is not empty. Set `$env:ROOTSCRIBE_DIR to a different path, or remove it."
         }
     }
     Say "cloning $RepoUrl (ref: $RepoRef) into $InstallDir"
@@ -123,7 +123,7 @@ function Install-AndBuild {
 
 function Print-NextSteps {
     Write-Host ''
-    Write-Host "applaud installed at $InstallDir" -ForegroundColor Green
+    Write-Host "rootscribe installed at $InstallDir" -ForegroundColor Green
     Write-Host ''
     Write-Host 'To start:'
     Write-Host "    cd $InstallDir"
@@ -135,7 +135,7 @@ function Print-NextSteps {
 }
 
 # --- main ---
-Say 'installing applaud (os: windows)'
+Say 'installing rootscribe (os: windows)'
 Ensure-Git
 Ensure-Pnpm
 Ensure-Node

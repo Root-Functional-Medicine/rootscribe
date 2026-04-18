@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import type { RecordingDetail } from "@applaud/shared";
+import type { RecordingDetail } from "@rootscribe/shared";
 import { applyRecordingMutation } from "./recordingCache.js";
 
 function makeRecording(overrides: Partial<RecordingDetail> = {}): RecordingDetail {

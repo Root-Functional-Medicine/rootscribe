@@ -50,7 +50,7 @@ function parseJwt(jwt: string): { iat: number | null; exp: number | null } {
 }
 
 function copyProfileToTemp(srcLeveldb: string): string {
-  const tmp = mkdtempSync(path.join(tmpdir(), "applaud-ldb-"));
+  const tmp = mkdtempSync(path.join(tmpdir(), "rootscribe-ldb-"));
   cpSync(srcLeveldb, tmp, {
     recursive: true,
     // Chrome holds an exclusive lock on LOCK while running. Skip it; readers don't need it.

@@ -36,7 +36,7 @@ COPY --from=build /app/web/dist/ web/dist/
 
 VOLUME ["/data/config", "/data/recordings"]
 
-ENV APPLAUD_CONFIG_DIR=/data/config
+ENV ROOTSCRIBE_CONFIG_DIR=/data/config
 ENV NODE_ENV=production
 
 EXPOSE 44471

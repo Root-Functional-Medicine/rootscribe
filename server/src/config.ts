@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
-import { DEFAULT_CONFIG, type AppConfig } from "@applaud/shared";
+import { DEFAULT_CONFIG, type AppConfig } from "@rootscribe/shared";
 import { ensureConfigDir, settingsPath } from "./paths.js";
 import { logger } from "./logger.js";
 

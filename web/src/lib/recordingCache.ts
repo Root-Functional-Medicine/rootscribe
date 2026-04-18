@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import type { RecordingDetail } from "@applaud/shared";
+import type { RecordingDetail } from "@rootscribe/shared";
 
 interface DetailWrapper {
   recording: RecordingDetail;

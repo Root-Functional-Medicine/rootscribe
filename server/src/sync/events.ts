@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { SyncEvent } from "@applaud/shared";
+import type { SyncEvent } from "@rootscribe/shared";
 
 class SyncEventBus extends EventEmitter {
   emitEvent(event: SyncEvent): void {

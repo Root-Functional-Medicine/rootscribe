@@ -12,7 +12,7 @@ import type {
   AppConfig,
   InboxStatus,
   RecordingsListFilter,
-} from "@applaud/shared";
+} from "@rootscribe/shared";
 
 export class ApiError extends Error {
   constructor(

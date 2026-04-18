@@ -1,4 +1,4 @@
-// Shared helpers for Jira link construction. Kept in @applaud/shared so both
+// Shared helpers for Jira link construction. Kept in @rootscribe/shared so both
 // the web UI and any future webhook consumers compute the same URL for the
 // same (baseUrl, issueKey) pair.
 

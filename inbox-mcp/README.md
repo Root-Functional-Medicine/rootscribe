@@ -1,17 +1,17 @@
 # @rootscribe/inbox-mcp
 
-An MCP (Model Context Protocol) server that exposes the Rootscribe/Applaud recording inbox to Claude Code. Reads the same `state.sqlite` the Applaud server writes to, and provides tools for listing new transcripts, reading transcript/summary text, tagging/categorizing, linking Jira issues, and snoozing/archiving.
+An MCP (Model Context Protocol) server that exposes the RootScribe recording inbox to Claude Code. Reads the same `state.sqlite` the RootScribe server writes to, and provides tools for listing new transcripts, reading transcript/summary text, tagging/categorizing, linking Jira issues, and snoozing/archiving.
 
 ## Install
 
-From the Rootscribe repo root:
+From the RootScribe repo root:
 
 ```bash
 pnpm install
 pnpm --filter @rootscribe/inbox-mcp build
 ```
 
-> **Prerequisite:** this MCP server reads the same `state.sqlite` the Rootscribe/Applaud server writes to, and assumes the **v4 inbox schema** has already been applied. Run a compatible rootscribe server (`pnpm start` from the repo root) at least once before connecting this MCP — the server owns migrations. The MCP will fail fast at startup with a clear message if the schema is missing.
+> **Prerequisite:** this MCP server reads the same `state.sqlite` the RootScribe server writes to, and assumes the **v4 inbox schema** has already been applied. Run a compatible RootScribe server (`pnpm start` from the repo root) at least once before connecting this MCP — the server owns migrations. The MCP will fail fast at startup with a clear message if the schema is missing.
 
 ## Register with Claude Code
 
@@ -47,10 +47,10 @@ Per-row state is tracked in `recordings.channel_notified_at`; each recording is 
 
 ## Data location
 
-Reads from the same config dir Applaud uses:
+Reads from the same config dir RootScribe uses:
 
-- **macOS**: `~/Library/Application Support/applaud/state.sqlite`
-- **Linux**: `$XDG_CONFIG_HOME/applaud/state.sqlite` (or `~/.config/applaud/`)
-- **Windows**: `%APPDATA%\applaud\state.sqlite`
+- **macOS**: `~/Library/Application Support/rootscribe/state.sqlite`
+- **Linux**: `$XDG_CONFIG_HOME/rootscribe/state.sqlite` (or `~/.config/rootscribe/`)
+- **Windows**: `%APPDATA%\rootscribe\state.sqlite`
 
-Override with `APPLAUD_CONFIG_DIR` env var.
+Override with `ROOTSCRIBE_CONFIG_DIR` env var.

@@ -2,7 +2,7 @@ import { useState, useMemo, type JSX } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../api.js";
-import type { RecordingRow, RecordingsListFilter } from "@applaud/shared";
+import type { RecordingRow, RecordingsListFilter } from "@rootscribe/shared";
 import { InboxStatusPill } from "../components/InboxStatusPill.js";
 import { InboxFilters } from "../components/InboxFilters.js";
 

@@ -1,8 +1,8 @@
-# Applaud
+# RootScribe
 
 A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recordings to disk and fires webhooks when new recordings or transcripts arrive, so you can easily hook it up to n8n (or any other custom integration). Runs on your machine, uses your existing Plaud browser session for auth, and ships with a web UI for setup and browsing.
 
-> Applaud is not affiliated with Plaud. It talks to the same undocumented web API that the Plaud web app uses, via your own logged-in session.
+> RootScribe is not affiliated with Plaud. It talks to the same undocumented web API that the Plaud web app uses, via your own logged-in session.
 
 ![Recordings dashboard](assets/Screenshot%202026-04-11%20203407.png)
 
@@ -21,22 +21,22 @@ A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recording
 
 ## Install
 
-First, you should never run commands you find on the internet that end in `| sh`. With that said, here's the easiest way to install Applaud:
+First, you should never run commands you find on the internet that end in `| sh`. With that said, here's the easiest way to install RootScribe:
 
 **macOS / Linux / WSL:**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/rsteckler/applaud/v0.5.6/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/v0.5.6/install.sh | sh
 ```
 
 **Windows (PowerShell):**
 ```powershell
-irm https://raw.githubusercontent.com/rsteckler/applaud/v0.5.6/install.ps1 | iex
+irm https://raw.githubusercontent.com/Root-Functional-Medicine/rootscribe/v0.5.6/install.ps1 | iex
 ```
 
-The installer does everything needed to install Applaud into a subfolder named `./applaud`. To run it:
+The installer does everything needed to install RootScribe into a subfolder named `./rootscribe`. To run it:
 
 ```bash
-cd applaud
+cd rootscribe
 pnpm start
 ```
 
@@ -45,8 +45,8 @@ Your browser will open to `http://127.0.0.1:44471/setup`. Walk through the 5-ste
 ### Manual install
 
 ```bash
-git clone https://github.com/rsteckler/applaud.git
-cd applaud
+git clone https://github.com/Root-Functional-Medicine/rootscribe.git
+cd rootscribe
 pnpm install
 pnpm build
 pnpm start
@@ -56,11 +56,11 @@ Requires Node.js >= 20 and pnpm >= 9.
 
 ## How it works
 
-1. **Auth:** Applaud reads your existing Plaud session from Chrome (or Edge / Brave / Arc / Vivaldi) by copying the browser's `Local Storage/leveldb` directory to a temp path (which sidesteps Chrome's file lock) and pulling the JWT bearer from the `tokenstr` key for `web.plaud.ai`. No passwords, no OAuth, no Playwright — just your existing session. Tokens are good for ~10 months.
+1. **Auth:** RootScribe reads your existing Plaud session from Chrome (or Edge / Brave / Arc / Vivaldi) by copying the browser's `Local Storage/leveldb` directory to a temp path (which sidesteps Chrome's file lock) and pulling the JWT bearer from the `tokenstr` key for `web.plaud.ai`. No passwords, no OAuth, no Playwright — just your existing session. Tokens are good for ~10 months.
 
 2. **Sync:** every 10 minutes (configurable), the server calls `/file/simple/web` on `api.plaud.ai` to list your latest recordings. New ones get a per-recording subfolder, their audio streamed down from S3, and — once Plaud finishes transcribing — transcript + summary pulled via `/ai/transsumm/` (with S3 fallback for older recordings).
 
-3. **Webhook:** if configured, Applaud POSTs a JSON payload to your URL whenever a new `audio_ready` or `transcript_ready` event happens. Includes file paths (relative to your recordings dir) plus ready-to-fetch HTTP URLs that the local media server serves, and — on `transcript_ready` — the flattened transcript text and summary markdown inline so n8n-style workflows don't need a second fetch.
+3. **Webhook:** if configured, RootScribe POSTs a JSON payload to your URL whenever a new `audio_ready` or `transcript_ready` event happens. Includes file paths (relative to your recordings dir) plus ready-to-fetch HTTP URLs that the local media server serves, and — on `transcript_ready` — the flattened transcript text and summary markdown inline so n8n-style workflows don't need a second fetch.
 
 ## Folder layout
 
@@ -109,7 +109,7 @@ Each recording gets its own folder under your chosen recordings directory:
 
 - `content` is only present on `transcript_ready` events. Both fields are nullable — if Plaud didn't generate a summary for a recording, `summary_markdown` will be `null`.
 - Webhook consumers should treat `(id, event)` as idempotent. `audio_ready` always fires before `transcript_ready`; on recordings that are already fully transcribed when first seen, both fire back-to-back in the same poll cycle.
-- Custom headers on every webhook: `User-Agent: applaud/0.1.0` and `X-Applaud-Event: audio_ready|transcript_ready`.
+- Custom headers on every webhook: `User-Agent: rootscribe/0.1.0` and `X-RootScribe-Event: audio_ready|transcript_ready`.
 
 ## n8n workflows
 
@@ -125,40 +125,40 @@ Pull the pre-built image and run:
 
 ```bash
 docker run -d \
-  --name applaud \
+  --name rootscribe \
   -p 44471:44471 \
-  -v applaud-config:/data/config \
-  -v applaud-recordings:/data/recordings \
-  ghcr.io/rsteckler/applaud:latest
+  -v rootscribe-config:/data/config \
+  -v rootscribe-recordings:/data/recordings \
+  ghcr.io/root-functional-medicine/rootscribe:latest
 ```
 
 Or build from source:
 
 ```bash
-docker build -t applaud .
+docker build -t rootscribe .
 docker run -d \
-  --name applaud \
+  --name rootscribe \
   -p 44471:44471 \
-  -v applaud-config:/data/config \
-  -v applaud-recordings:/data/recordings \
-  applaud
+  -v rootscribe-config:/data/config \
+  -v rootscribe-recordings:/data/recordings \
+  rootscribe
 ```
 
 Open `http://localhost:44471/setup` to configure. On first run, the setup wizard will ask you to paste your Plaud token manually (browser auto-detect doesn't work inside a container).
 
 ## Running in the background
 
-Applaud is a foreground process. To keep it running without a terminal:
+RootScribe is a foreground process. To keep it running without a terminal:
 
-**macOS (launchd):** create `~/Library/LaunchAgents/dev.applaud.plist` pointing to `pnpm start` in the install dir.
+**macOS (launchd):** create `~/Library/LaunchAgents/dev.rootscribe.plist` pointing to `pnpm start` in the install dir.
 
-**Linux (systemd user):** create `~/.config/systemd/user/applaud.service` with `ExecStart=pnpm --dir=%h/applaud start`.
+**Linux (systemd user):** create `~/.config/systemd/user/rootscribe.service` with `ExecStart=pnpm --dir=%h/rootscribe start`.
 
 **Both platforms:** or just run it inside `tmux` / `screen`.
 
 ## Config
 
-Settings live in `~/.config/applaud/settings.json` (or `~/Library/Application Support/applaud/` on macOS, `%APPDATA%\applaud\` on Windows). Recording state is in `state.sqlite` alongside. Both are managed through the web UI — you shouldn't need to edit them by hand.
+Settings live in `~/.config/rootscribe/settings.json` (or `~/Library/Application Support/rootscribe/` on macOS, `%APPDATA%\rootscribe\` on Windows). Recording state is in `state.sqlite` alongside. Both are managed through the web UI — you shouldn't need to edit them by hand.
 
 The bearer token is stored as plaintext in `settings.json` (with `chmod 600`). The file lives in a user-only directory, and the token's scope is equivalent to "read this user's own Plaud data." OS keychain integration is a future enhancement.
 
@@ -236,7 +236,7 @@ rootscribe/
 Two GitHub Actions workflows gate every PR against `main`:
 
 - **`ci.yml`** — installs dependencies, runs ESLint, typechecks all four packages, executes the Vitest suite with coverage on Node 20 and 22, uploads artifacts, and posts a coverage summary comment.
-- **`e2e.yml`** — builds the production bundle, installs Chromium, runs Playwright smoke tests against a scratch `APPLAUD_CONFIG_DIR`, and uploads traces + videos on failure.
+- **`e2e.yml`** — builds the production bundle, installs Chromium, runs Playwright smoke tests against a scratch `ROOTSCRIBE_CONFIG_DIR`, and uploads traces + videos on failure.
 
 Once both workflows are green on a PR, require the `CI / test` and `E2E / playwright` checks in branch protection on `main` (admin step, not automated here).
 

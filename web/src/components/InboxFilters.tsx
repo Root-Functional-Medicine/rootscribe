@@ -1,5 +1,5 @@
 import type { JSX } from "react";
-import type { RecordingsListFilter } from "@applaud/shared";
+import type { RecordingsListFilter } from "@rootscribe/shared";
 
 interface InboxFiltersProps {
   filter: RecordingsListFilter;

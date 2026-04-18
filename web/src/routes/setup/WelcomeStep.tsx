@@ -5,7 +5,7 @@ export function WelcomeStep({ onNext }: { onNext: () => void }): JSX.Element {
     <div className="space-y-8">
       <div className="space-y-2">
         <span className="font-label text-primary text-xs font-bold tracking-widest uppercase">Step 1</span>
-        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Welcome to Applaud</h1>
+        <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Welcome to RootScribe</h1>
         <p className="text-on-surface-variant text-base max-w-md leading-relaxed">
           This tool mirrors your Plaud recordings to local disk and (optionally) fires a
           webhook whenever a new recording or transcript lands. Setup takes about a minute.
@@ -15,7 +15,7 @@ export function WelcomeStep({ onNext }: { onNext: () => void }): JSX.Element {
         <Bullet>Find your Plaud login automatically from Chrome</Bullet>
         <Bullet>Pick a folder on disk to mirror recordings into</Bullet>
         <Bullet>(Optional) configure a webhook for automations like n8n</Bullet>
-        <Bullet>Done — Applaud polls for new recordings every 10 minutes</Bullet>
+        <Bullet>Done — RootScribe polls for new recordings every 10 minutes</Bullet>
       </div>
       <div className="flex justify-end pt-4">
         <button className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10" onClick={onNext}>

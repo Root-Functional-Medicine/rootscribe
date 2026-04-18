@@ -1,5 +1,5 @@
 {
-  "name": "applaud",
+  "name": "rootscribe",
   "version": "0.1.0",
   "private": true,
   "description": "Self-hosted server that mirrors Plaud recordings to local disk and triggers webhooks on new uploads.",

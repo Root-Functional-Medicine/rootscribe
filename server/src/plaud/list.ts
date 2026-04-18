@@ -1,4 +1,4 @@
-import type { PlaudListResponse } from "@applaud/shared";
+import type { PlaudListResponse } from "@rootscribe/shared";
 import { plaudJson } from "./client.js";
 
 export interface ListOptions {

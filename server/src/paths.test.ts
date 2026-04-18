@@ -12,53 +12,53 @@ import {
 } from "./paths.js";
 
 describe("configDir (env override)", () => {
-  const original = process.env.APPLAUD_CONFIG_DIR;
+  const original = process.env.ROOTSCRIBE_CONFIG_DIR;
 
   beforeEach(() => {
-    process.env.APPLAUD_CONFIG_DIR = "/custom/applaud/dir";
+    process.env.ROOTSCRIBE_CONFIG_DIR = "/custom/rootscribe/dir";
   });
 
   afterEach(() => {
-    if (original == null) delete process.env.APPLAUD_CONFIG_DIR;
-    else process.env.APPLAUD_CONFIG_DIR = original;
+    if (original == null) delete process.env.ROOTSCRIBE_CONFIG_DIR;
+    else process.env.ROOTSCRIBE_CONFIG_DIR = original;
   });
 
-  it("honors APPLAUD_CONFIG_DIR over the platform default", () => {
-    expect(configDir()).toBe("/custom/applaud/dir");
+  it("honors ROOTSCRIBE_CONFIG_DIR over the platform default", () => {
+    expect(configDir()).toBe("/custom/rootscribe/dir");
   });
 
-  it("ignores an empty APPLAUD_CONFIG_DIR and falls back to a platform default", () => {
-    process.env.APPLAUD_CONFIG_DIR = "";
+  it("ignores an empty ROOTSCRIBE_CONFIG_DIR and falls back to a platform default", () => {
+    process.env.ROOTSCRIBE_CONFIG_DIR = "";
     const dir = configDir();
     expect(dir).not.toBe("");
     expect(path.isAbsolute(dir)).toBe(true);
   });
 
   it("derives settingsPath, dbPath, logPath, and lockPath from configDir", () => {
-    expect(settingsPath()).toBe(path.join("/custom/applaud/dir", "settings.json"));
-    expect(dbPath()).toBe(path.join("/custom/applaud/dir", "state.sqlite"));
-    expect(logPath()).toBe(path.join("/custom/applaud/dir", "applaud.log"));
-    expect(lockPath()).toBe(path.join("/custom/applaud/dir", "applaud.lock"));
+    expect(settingsPath()).toBe(path.join("/custom/rootscribe/dir", "settings.json"));
+    expect(dbPath()).toBe(path.join("/custom/rootscribe/dir", "state.sqlite"));
+    expect(logPath()).toBe(path.join("/custom/rootscribe/dir", "rootscribe.log"));
+    expect(lockPath()).toBe(path.join("/custom/rootscribe/dir", "rootscribe.lock"));
   });
 });
 
 describe("ensureConfigDir", () => {
   let tmpRoot: string;
-  const original = process.env.APPLAUD_CONFIG_DIR;
+  const original = process.env.ROOTSCRIBE_CONFIG_DIR;
 
   beforeEach(() => {
-    tmpRoot = mkdtempSync(path.join(tmpdir(), "applaud-paths-test-"));
+    tmpRoot = mkdtempSync(path.join(tmpdir(), "rootscribe-paths-test-"));
   });
 
   afterEach(() => {
-    if (original == null) delete process.env.APPLAUD_CONFIG_DIR;
-    else process.env.APPLAUD_CONFIG_DIR = original;
+    if (original == null) delete process.env.ROOTSCRIBE_CONFIG_DIR;
+    else process.env.ROOTSCRIBE_CONFIG_DIR = original;
     if (existsSync(tmpRoot)) rmSync(tmpRoot, { recursive: true, force: true });
   });
 
   it("creates the directory if missing and returns its path", () => {
-    const target = path.join(tmpRoot, "nested", "applaud");
-    process.env.APPLAUD_CONFIG_DIR = target;
+    const target = path.join(tmpRoot, "nested", "rootscribe");
+    process.env.ROOTSCRIBE_CONFIG_DIR = target;
     expect(existsSync(target)).toBe(false);
     const result = ensureConfigDir();
     expect(result).toBe(target);
@@ -67,8 +67,8 @@ describe("ensureConfigDir", () => {
   });
 
   it("is idempotent when called twice", () => {
-    const target = path.join(tmpRoot, "applaud");
-    process.env.APPLAUD_CONFIG_DIR = target;
+    const target = path.join(tmpRoot, "rootscribe");
+    process.env.ROOTSCRIBE_CONFIG_DIR = target;
     ensureConfigDir();
     expect(() => ensureConfigDir()).not.toThrow();
     expect(existsSync(target)).toBe(true);

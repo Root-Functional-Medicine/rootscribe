@@ -17,8 +17,8 @@ jobs:
     env:
       # Scratch config dir for a clean "first-run" state every build so the
       # setup-wizard redirect is deterministic and the real user config
-      # (~/Library/Application Support/applaud) is never touched.
-      APPLAUD_CONFIG_DIR: ${{ github.workspace }}/.applaud-ci
+      # (~/Library/Application Support/rootscribe) is never touched.
+      ROOTSCRIBE_CONFIG_DIR: ${{ github.workspace }}/.rootscribe-ci
     steps:
       - uses: actions/checkout@v4
 

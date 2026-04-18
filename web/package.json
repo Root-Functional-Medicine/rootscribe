@@ -1,5 +1,5 @@
 {
-  "name": "@applaud/web",
+  "name": "@rootscribe/web",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@applaud/shared": "workspace:*",
+    "@rootscribe/shared": "workspace:*",
     "@tanstack/react-query": "^5.59.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",

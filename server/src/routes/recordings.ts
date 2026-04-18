@@ -21,8 +21,8 @@ import type {
   RecordingDetail,
   InboxStatus,
   RecordingsListFilter,
-} from "@applaud/shared";
-import { isValidJiraKey } from "@applaud/shared";
+} from "@rootscribe/shared";
+import { isValidJiraKey } from "@rootscribe/shared";
 
 export const recordingsRouter = Router();
 

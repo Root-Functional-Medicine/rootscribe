@@ -12,17 +12,17 @@ function useStarNudge(): { show: boolean; dismiss: () => void } {
     if (location.pathname !== "/" || counted.current) return;
     counted.current = true;
 
-    if (localStorage.getItem("applaud-star-dismissed")) return;
+    if (localStorage.getItem("rootscribe-star-dismissed")) return;
 
-    const visits = parseInt(localStorage.getItem("applaud-dashboard-visits") ?? "0", 10) + 1;
-    localStorage.setItem("applaud-dashboard-visits", String(visits));
+    const visits = parseInt(localStorage.getItem("rootscribe-dashboard-visits") ?? "0", 10) + 1;
+    localStorage.setItem("rootscribe-dashboard-visits", String(visits));
 
     if (visits === 3) setShow(true);
   }, [location.pathname]);
 
   const dismiss = (): void => {
     setShow(false);
-    localStorage.setItem("applaud-star-dismissed", "1");
+    localStorage.setItem("rootscribe-star-dismissed", "1");
   };
 
   return { show, dismiss };
@@ -38,7 +38,7 @@ export function AppShell(): JSX.Element {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 h-16">
           <div className="flex items-center gap-10">
             <NavLink to="/" className="text-2xl font-black text-on-surface">
-              Applaud<span className="text-primary">.</span>
+              RootScribe<span className="text-primary">.</span>
             </NavLink>
             <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
               <NavLink
@@ -69,7 +69,7 @@ export function AppShell(): JSX.Element {
             <div className="relative">
               <a
                 ref={ghRef}
-                href="https://github.com/rsteckler/applaud"
+                href="https://github.com/Root-Functional-Medicine/rootscribe"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-lg p-1.5 text-on-surface-variant hover:text-on-surface transition-colors block"
@@ -85,10 +85,10 @@ export function AppShell(): JSX.Element {
                   <div className="absolute -top-1.5 right-3 w-3 h-3 rotate-45 bg-surface-container-high border-l border-t border-outline-variant/30" />
                   <div className="bg-surface-container-high border border-outline-variant/30 rounded-xl p-4 shadow-xl">
                     <p className="text-sm text-on-surface leading-relaxed">
-                      Enjoying Applaud? I'd really appreciate a
+                      Enjoying RootScribe? I'd really appreciate a
                       {" "}
                       <a
-                        href="https://github.com/rsteckler/applaud"
+                        href="https://github.com/Root-Functional-Medicine/rootscribe"
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-primary font-semibold hover:underline"
