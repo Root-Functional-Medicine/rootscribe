@@ -14,6 +14,7 @@ import {
   addJiraLink,
   removeJiraLink,
 } from "../sync/state.js";
+import { loadAllTags, loadAllCategories } from "../db.js";
 import { loadConfig } from "../config.js";
 import { encodeFolderPath } from "../lib/url.js";
 import type {
@@ -105,7 +106,12 @@ interface ReadRecordingDetailOptions {
 function readRecordingDetail(
   id: string,
   opts: ReadRecordingDetailOptions = {},
-): { detail: RecordingDetail; mediaBase: string } | null {
+): {
+  detail: RecordingDetail;
+  mediaBase: string;
+  availableTags: string[];
+  availableCategories: string[];
+} | null {
   const rel = getRecordingWithRelations(id);
   if (!rel) return null;
 
@@ -146,7 +152,15 @@ function readRecordingDetail(
     inboxNotes: rel.inboxNotes,
     jiraLinks: rel.jiraLinks,
   };
-  return { detail, mediaBase: `/media/${encodeFolderPath(rel.row.folder)}` };
+  return {
+    detail,
+    mediaBase: `/media/${encodeFolderPath(rel.row.folder)}`,
+    // Two DISTINCT scans per call. Cheap on the single-detail path (hit once
+    // per page load + per tag/category mutation), unlike the list endpoint
+    // where high-frequency filter refetches made them an opt-in via `facets`.
+    availableTags: loadAllTags(),
+    availableCategories: loadAllCategories(),
+  };
 }
 
 recordingsRouter.get("/:id", (req, res) => {
@@ -165,6 +179,8 @@ recordingsRouter.get("/:id", (req, res) => {
     recording: full.detail,
     mediaBase: full.mediaBase,
     recordingsDir: cfg.recordingsDir ?? "",
+    availableTags: full.availableTags,
+    availableCategories: full.availableCategories,
   });
 });
 
@@ -205,7 +221,11 @@ function respondWithDetail(res: import("express").Response, id: string): void {
     res.status(404).json({ error: "not found" });
     return;
   }
-  res.json({ recording: full.detail });
+  res.json({
+    recording: full.detail,
+    availableTags: full.availableTags,
+    availableCategories: full.availableCategories,
+  });
 }
 
 recordingsRouter.patch("/:id/status", (req, res) => {

@@ -3,7 +3,8 @@ import type {
   AuthValidateResponse,
   ConfigResponse,
   RecordingsListResponse,
-  RecordingDetail,
+  RecordingDetailResponse,
+  InboxMutationResponse,
   SyncStatusResponse,
   SetupStatusResponse,
   WebhookTestResponse,
@@ -144,16 +145,16 @@ export const api = {
     return jsonFetch<RecordingsListResponse>(`/api/recordings?${qs.toString()}`);
   },
   recordingDetail: (id: string) =>
-    jsonFetch<{ recording: RecordingDetail; mediaBase: string; recordingsDir?: string }>(
-      `/api/recordings/${id}`,
-    ),
+    jsonFetch<RecordingDetailResponse>(`/api/recordings/${id}`),
   deleteRecording: (id: string) =>
     jsonFetch<{ ok: boolean }>(`/api/recordings/${id}`, { method: "DELETE" }),
   syncStatus: () => jsonFetch<SyncStatusResponse>("/api/sync/status"),
   syncTrigger: () =>
     jsonFetch<{ ok: boolean }>("/api/sync/trigger", { method: "POST", body: "{}" }),
   // Inbox mutations — each returns the freshly-hydrated RecordingDetail so the
-  // React Query cache can be patched without a second round-trip.
+  // React Query cache can be patched without a second round-trip. The response
+  // also carries fresh `availableTags` / `availableCategories` so the
+  // detail-page autocomplete reflects a newly-added value immediately.
   // `notes` is only valid when status is "reviewed" (enforced both by the
   // shared `InboxStatusPatchRequest` discriminated union and by the server).
   // The conditional tuple on `...args` makes the constraint compile-time:
@@ -165,43 +166,43 @@ export const api = {
     ...args: TStatus extends "reviewed" ? [notes?: string] : []
   ) => {
     const notes = args[0];
-    return jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/status`, {
+    return jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/status`, {
       method: "PATCH",
       body: JSON.stringify({ status, ...(notes !== undefined ? { notes } : {}) }),
     });
   },
   setSnooze: (id: string, snoozedUntil: number | null) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/snooze`, {
+    jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/snooze`, {
       method: "PATCH",
       body: JSON.stringify({ snoozedUntil }),
     }),
   setCategory: (id: string, category: string | null) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/category`, {
+    jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/category`, {
       method: "PATCH",
       body: JSON.stringify({ category }),
     }),
   setInboxNotes: (id: string, notes: string | null) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/notes`, {
+    jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/notes`, {
       method: "PATCH",
       body: JSON.stringify({ notes }),
     }),
   addTag: (id: string, tag: string) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/tags`, {
+    jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/tags`, {
       method: "POST",
       body: JSON.stringify({ tag }),
     }),
   removeTag: (id: string, tag: string) =>
-    jsonFetch<{ recording: RecordingDetail }>(
+    jsonFetch<InboxMutationResponse>(
       `/api/recordings/${id}/tags/${encodeURIComponent(tag)}`,
       { method: "DELETE" },
     ),
   addJiraLink: (id: string, params: { issueKey: string; issueUrl?: string | null; relation?: string }) =>
-    jsonFetch<{ recording: RecordingDetail }>(`/api/recordings/${id}/jira-links`, {
+    jsonFetch<InboxMutationResponse>(`/api/recordings/${id}/jira-links`, {
       method: "POST",
       body: JSON.stringify(params),
     }),
   removeJiraLink: (id: string, issueKey: string) =>
-    jsonFetch<{ recording: RecordingDetail }>(
+    jsonFetch<InboxMutationResponse>(
       `/api/recordings/${id}/jira-links/${encodeURIComponent(issueKey)}`,
       { method: "DELETE" },
     ),

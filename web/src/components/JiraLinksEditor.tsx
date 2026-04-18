@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { JiraLink, RecordingDetail } from "@applaud/shared";
+import type { JiraLink, InboxMutationResponse } from "@applaud/shared";
 import { isValidJiraKey, buildJiraUrl } from "@applaud/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
@@ -37,7 +37,7 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   const addLink = useMutation({
     mutationFn: (params: { issueKey: string; issueUrl: string | null }) =>
       api.addJiraLink(recordingId, params),
-    onSuccess: (response: { recording: RecordingDetail }) => {
+    onSuccess: (response: InboxMutationResponse) => {
       applyRecordingMutation(qc, recordingId, response);
       // Clear inputs after server confirms the insert. On failure the user
       // keeps what they typed so they can fix and retry without re-entering.
@@ -47,7 +47,7 @@ export function JiraLinksEditor({ recordingId, links }: JiraLinksEditorProps): J
   });
   const removeLink = useMutation({
     mutationFn: (key: string) => api.removeJiraLink(recordingId, key),
-    onSuccess: (response: { recording: RecordingDetail }) =>
+    onSuccess: (response: InboxMutationResponse) =>
       applyRecordingMutation(qc, recordingId, response),
   });
 

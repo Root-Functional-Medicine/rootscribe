@@ -1,18 +1,26 @@
-import { useState, useEffect, useRef } from "react";
+import { useId, useState, useEffect, useRef } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import type { RecordingDetail } from "@applaud/shared";
+import type { InboxMutationResponse } from "@applaud/shared";
 import { api } from "../api.js";
 import { applyRecordingMutation } from "../lib/recordingCache.js";
 
 interface CategoryEditorProps {
   recordingId: string;
   category: string | null;
+  // Corpus of every category in use across all recordings. Offered as datalist
+  // suggestions so the user picks from the existing taxonomy rather than
+  // inventing variants (e.g. `client-intake` vs `client_intake`).
+  availableCategories: string[];
 }
 
 // Inline editable category. Click the displayed value to edit; blur or Enter
 // commits; Escape cancels. Keeps the detail sidebar compact instead of an
 // always-visible input field for a property that is usually set once.
-export function CategoryEditor({ recordingId, category }: CategoryEditorProps): JSX.Element {
+export function CategoryEditor({
+  recordingId,
+  category,
+  availableCategories,
+}: CategoryEditorProps): JSX.Element {
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(category ?? "");
@@ -20,6 +28,9 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
   // fires blur → commit(). Without this guard, commit() would persist the
   // pre-cancel draft even though the user explicitly discarded the edit.
   const canceledRef = useRef(false);
+  // Stable id for associating the datalist with the input even if multiple
+  // CategoryEditors share a page.
+  const listId = useId();
 
   useEffect(() => {
     if (!editing) setDraft(category ?? "");
@@ -27,7 +38,7 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
 
   const mutation = useMutation({
     mutationFn: (value: string | null) => api.setCategory(recordingId, value),
-    onSuccess: (response: { recording: RecordingDetail }) =>
+    onSuccess: (response: InboxMutationResponse) =>
       applyRecordingMutation(qc, recordingId, response),
   });
 
@@ -67,7 +78,13 @@ export function CategoryEditor({ recordingId, category }: CategoryEditorProps): 
             }
           }}
           placeholder="e.g. client-intake"
+          list={listId}
         />
+        <datalist id={listId}>
+          {availableCategories.map((c) => (
+            <option key={c} value={c} />
+          ))}
+        </datalist>
       </div>
     );
   }
