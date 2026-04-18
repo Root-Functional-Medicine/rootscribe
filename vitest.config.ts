@@ -34,9 +34,7 @@ export default defineConfig({
         // Web entrypoint mounts React; covered by Playwright.
         "web/src/main.tsx",
         "web/src/App.tsx",
-        // Tailwind/PostCSS configs are build-time, not runtime.
-        "web/tailwind.config.ts",
-        "web/postcss.config.js",
+        // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
       // Current baseline (Apr 2026): 19% lines, 78% branches, 28% functions.
       // Thresholds sit slightly below baseline so drops caused by untested
