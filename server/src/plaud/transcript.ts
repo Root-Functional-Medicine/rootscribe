@@ -132,7 +132,7 @@ export function extractSummaryMarkdown(resp: TranssummResponse): string | null {
   if (!raw) return null;
 
   // Plaud returns this field as either a structured object OR a JSON-encoded string.
-  let obj: SummaryContent | null = null;
+  let obj: SummaryContent;
   if (typeof raw === "string") {
     try {
       obj = JSON.parse(raw) as SummaryContent;
@@ -144,7 +144,7 @@ export function extractSummaryMarkdown(resp: TranssummResponse): string | null {
     obj = raw;
   }
 
-  const content = obj?.content;
+  const content = obj.content;
   if (typeof content === "string") {
     return content.trim().length > 0 ? content : null;
   }
