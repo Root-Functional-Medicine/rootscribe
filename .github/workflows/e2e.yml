@@ -19,6 +19,13 @@ jobs:
       # setup-wizard redirect is deterministic and the real user config
       # (~/Library/Application Support/rootscribe) is never touched.
       ROOTSCRIBE_CONFIG_DIR: ${{ github.workspace }}/.rootscribe-ci
+      # seedInitialState() wipes state.sqlite and overwrites settings.json,
+      # so playwright.config.ts defaults to refusing any non-tmp
+      # ROOTSCRIBE_CONFIG_DIR — that default protects developers from
+      # clobbering real user data if they run `pnpm test:e2e` with a stale
+      # env var. This CI workspace is a throwaway checkout though, so
+      # explicitly opt in to seeding our supplied scratch dir.
+      ROOTSCRIBE_E2E_ALLOW_CONFIG_DIR: "1"
     steps:
       - uses: actions/checkout@v4
 
