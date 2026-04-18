@@ -13,7 +13,11 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  // restoreAllMocks doesn't undo vi.stubGlobal — it only restores spies
+  // (vi.spyOn) and mock fns. stubMatchMedia uses stubGlobal, so we need
+  // unstubAllGlobals for its cleanup, plus restoreAllMocks for any spies.
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   localStorage.clear();
   document.documentElement.classList.remove("dark");
 });
