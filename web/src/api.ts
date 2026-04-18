@@ -142,7 +142,12 @@ export const api = {
     if (params.tag) qs.set("tag", params.tag);
     if (params.category) qs.set("category", params.category);
     if (params.facets) qs.set("facets", "1");
-    return jsonFetch<RecordingsListResponse>(`/api/recordings?${qs.toString()}`);
+    // Skip the `?` entirely when no params are set so `/api/recordings` and
+    // `/api/recordings?foo=bar` stay distinct cache keys upstream (and logs
+    // stop showing a naked trailing `?` on the default dashboard request).
+    const query = qs.toString();
+    const url = query ? `/api/recordings?${query}` : "/api/recordings";
+    return jsonFetch<RecordingsListResponse>(url);
   },
   recordingDetail: (id: string) =>
     jsonFetch<RecordingDetailResponse>(`/api/recordings/${id}`),

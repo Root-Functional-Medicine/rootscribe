@@ -140,10 +140,10 @@ describe("api.listRecordings query string", () => {
     vi.unstubAllGlobals();
   });
 
-  it("omits all query parameters when none are provided", async () => {
+  it("omits the '?' entirely when no query parameters are provided", async () => {
     await api.listRecordings();
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe("/api/recordings?");
+    expect(url).toBe("/api/recordings");
   });
 
   it("encodes limit, offset, and filter when provided", async () => {

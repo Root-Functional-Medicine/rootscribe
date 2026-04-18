@@ -3,7 +3,16 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-const PORT = Number(process.env.APPLAUD_E2E_PORT ?? 44471);
+// Locally `pnpm dev` starts Vite on 44470 (serving the SPA) and Express on
+// 44471 (serving /api + /media, proxied through Vite). In dev mode the Express
+// server doesn't serve the SPA — requests to `/` return 503 because web/dist
+// doesn't exist. In CI we run the production build via `pnpm start:nobuild`,
+// where Express serves both the SPA bundle and the API on 44471. So the port
+// we point Playwright at depends on which server is serving the SPA:
+//   CI → Express with built SPA → 44471
+//   local → Vite dev server (proxies /api) → 44470
+const DEFAULT_PORT = process.env.CI ? 44471 : 44470;
+const PORT = Number(process.env.APPLAUD_E2E_PORT ?? DEFAULT_PORT);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
 
 // Resolve the server process's config dir at Playwright load time. If the
@@ -40,9 +49,11 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // CI builds once and runs the production server; local runs use the
-    // dev server (vite + express) so hot-reload and source maps stay live.
-    command: process.env.CI ? "pnpm start" : "pnpm dev",
+    // CI runs `pnpm build` as a dedicated step before Playwright starts, so
+    // `start:nobuild` skips the redundant `pnpm build` that `start` would
+    // otherwise re-run. Local runs use the dev server (vite + express) so
+    // hot-reload and source maps stay live.
+    command: process.env.CI ? "pnpm start:nobuild" : "pnpm dev",
     url: BASE_URL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
