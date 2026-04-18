@@ -23,5 +23,13 @@ export default defineProject({
     include: ["src/**/*.{test,spec}.ts", "tests/**/*.{test,spec}.ts"],
     setupFiles: ["tests/setup.ts"],
     testTimeout: 10_000,
+    // Several server suites mutate `process.env.APPLAUD_CONFIG_DIR` at
+    // module load (src/paths.test.ts, tests/routes/config.test.ts) and
+    // rely on it staying put for the duration of the file. With Vitest's
+    // default parallel execution, two files could overwrite each other's
+    // env between imports and module initialization — serializing files
+    // keeps the env deterministic. `describe` blocks within a file still
+    // run sequentially by default, so no per-test slowdown.
+    fileParallelism: false,
   },
 });
