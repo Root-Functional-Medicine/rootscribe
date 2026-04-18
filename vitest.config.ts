@@ -8,7 +8,7 @@ import { sharedCoverageExclude } from "./vitest.shared.js";
 //
 // Coverage thresholds are the BASELINE we currently achieve (DEVX-100 was
 // scoped as "infrastructure + baseline tests"). The ratcheting plan lives in
-// DEVX-XXX (the 95%-coverage follow-up Story) — bump each threshold +5% per
+// DEVX-102 (the 95%-coverage follow-up Story) — bump each threshold +5% per
 // PR there until all sit >= 95%.
 export default defineConfig({
   test: {

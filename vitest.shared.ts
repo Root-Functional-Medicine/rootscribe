@@ -23,11 +23,20 @@ export const sharedCoverageExclude = [
   "**/types.ts",
 ];
 
-export function baseTestConfig(): NonNullable<UserConfig["test"]> {
+// Per-project JUnit filename. In Vitest workspace mode every project writes
+// to disk in parallel; sharing `test-results/junit.xml` across projects means
+// they race each other and the last one wins. Including the project name in
+// the path gives each suite its own file so CI artifact upload gets complete
+// results for every package.
+export function baseTestConfig(
+  projectName: string,
+): NonNullable<UserConfig["test"]> {
   return {
     exclude: sharedExclude,
     passWithNoTests: false,
     reporters: process.env.CI ? ["default", "junit"] : ["default"],
-    outputFile: process.env.CI ? { junit: "test-results/junit.xml" } : undefined,
+    outputFile: process.env.CI
+      ? { junit: `test-results/junit-${projectName}.xml` }
+      : undefined,
   };
 }

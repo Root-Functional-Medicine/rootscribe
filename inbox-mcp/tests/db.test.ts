@@ -9,6 +9,11 @@ import {
   truncateAll,
 } from "./helpers/schema.js";
 
+// Capture the caller's original APPLAUD_CONFIG_DIR before overriding it, so
+// afterAll can restore it. Otherwise subsequent tests in the same Vitest
+// worker would see a path pointing at our (deleted) temp dir.
+const originalConfigDir = process.env.APPLAUD_CONFIG_DIR;
+
 // Prepare an isolated config dir and pre-populate it with a v4 state.sqlite
 // BEFORE the module imports below fire, because inbox-mcp's db.ts latches the
 // DB path on first `getDb()` call and refuses to open a DB without v4 schema.
@@ -48,6 +53,10 @@ describe("inbox-mcp db", () => {
 
   afterAll(() => {
     rmSync(tmpRoot, { recursive: true, force: true });
+    // Restore BEFORE the next test file observes an env pointing at a dir
+    // that no longer exists.
+    if (originalConfigDir == null) delete process.env.APPLAUD_CONFIG_DIR;
+    else process.env.APPLAUD_CONFIG_DIR = originalConfigDir;
   });
 
   describe("listNew", () => {

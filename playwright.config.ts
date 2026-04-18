@@ -1,7 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
 const PORT = Number(process.env.APPLAUD_E2E_PORT ?? 44471);
 const BASE_URL = `http://127.0.0.1:${PORT}`;
+
+// Resolve the server process's config dir at Playwright load time. If the
+// caller (CI, local dev) explicitly set APPLAUD_CONFIG_DIR, honor it —
+// otherwise mint a disposable tmp dir. We must NEVER pass an empty string
+// to the server: server/src/paths.ts treats an empty APPLAUD_CONFIG_DIR as
+// "unset" and falls back to ~/Library/Application Support/applaud, which
+// would let local E2E runs read and mutate the user's real settings.json.
+const E2E_CONFIG_DIR =
+  process.env.APPLAUD_CONFIG_DIR && process.env.APPLAUD_CONFIG_DIR.length > 0
+    ? process.env.APPLAUD_CONFIG_DIR
+    : mkdtempSync(path.join(tmpdir(), "applaud-e2e-"));
 
 export default defineConfig({
   testDir: "./tests/e2e",
@@ -35,7 +49,7 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      APPLAUD_CONFIG_DIR: process.env.APPLAUD_CONFIG_DIR ?? "",
+      APPLAUD_CONFIG_DIR: E2E_CONFIG_DIR,
     },
   },
 });

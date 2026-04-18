@@ -15,7 +15,7 @@ export default defineProject({
     },
   },
   test: {
-    ...baseTestConfig(),
+    ...baseTestConfig("web"),
     name: "web",
     environment: "happy-dom",
     globals: true,

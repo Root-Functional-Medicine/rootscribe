@@ -72,7 +72,10 @@ describe("jsonFetch error extraction (via api.config)", () => {
     });
   });
 
-  it("falls back to 'HTTP <status>' when the error body is unparseable", async () => {
+  it("surfaces the raw body when the response isn't JSON", async () => {
+    // jsonFetch prefers the raw body text for non-JSON responses, and only
+    // falls back to "HTTP <status>" when the body is also empty. This test
+    // covers the common "upstream returned plain-text error" path.
     fetchMock.mockResolvedValueOnce(
       new Response("not json at all", {
         status: 500,
@@ -83,6 +86,20 @@ describe("jsonFetch error extraction (via api.config)", () => {
     await expect(api.config()).rejects.toMatchObject({
       status: 500,
       message: "not json at all",
+    });
+  });
+
+  it("falls back to 'HTTP <status>' only when the error body is empty", async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response("", {
+        status: 502,
+        headers: { "content-type": "text/plain" },
+      }),
+    );
+
+    await expect(api.config()).rejects.toMatchObject({
+      status: 502,
+      message: "HTTP 502",
     });
   });
 

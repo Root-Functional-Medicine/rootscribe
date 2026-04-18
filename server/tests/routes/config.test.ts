@@ -2,6 +2,13 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import request from "supertest";
 import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
 
+// Capture the caller's original APPLAUD_CONFIG_DIR before the helper
+// mutates process.env, so it can be restored in afterAll. Without this, a
+// subsequent test in the same Vitest worker would see this suite's (now
+// deleted) temp dir and either fail loudly or silently touch the user's
+// real config.
+const originalConfigDir = process.env.APPLAUD_CONFIG_DIR;
+
 // Set APPLAUD_CONFIG_DIR BEFORE importing any server module so the config
 // cache + db singleton point at a disposable temp directory for the whole
 // suite. If we imported first, the module-level `cached` in server/src/config.ts
@@ -21,6 +28,10 @@ describe("GET /api/config", () => {
   afterAll(() => {
     resetConfigCache();
     cleanupTempDir(configDir);
+    // Restore BEFORE the next test file observes an env pointing at a dir
+    // that no longer exists.
+    if (originalConfigDir == null) delete process.env.APPLAUD_CONFIG_DIR;
+    else process.env.APPLAUD_CONFIG_DIR = originalConfigDir;
   });
 
   it("returns the default config on a fresh install (no settings.json yet)", async () => {

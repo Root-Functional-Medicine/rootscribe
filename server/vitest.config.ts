@@ -17,7 +17,7 @@ export default defineProject({
     },
   },
   test: {
-    ...baseTestConfig(),
+    ...baseTestConfig("server"),
     name: "server",
     environment: "node",
     include: ["src/**/*.{test,spec}.ts", "tests/**/*.{test,spec}.ts"],
