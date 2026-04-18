@@ -13,7 +13,7 @@
   },
   "dependencies": {
     "@applaud/shared": "workspace:*",
-    "better-sqlite3": "^11.3.0",
+    "better-sqlite3": "^12.9.0",
     "classic-level": "^2.0.0",
     "express": "^5.2.1",
     "open": "^10.1.0",
@@ -22,7 +22,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.11",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.6",
     "@types/node": "^22.7.0",
     "@types/supertest": "^6.0.2",
