@@ -178,7 +178,7 @@ All four workspace packages (`shared`, `server`, `web`, `inbox-mcp`) share one t
 # Unit + integration, every package
 pnpm test
 
-# Watch mode (Vitest UI)
+# Watch mode
 pnpm test:watch
 
 # With V8 coverage (HTML + LCOV + json-summary)
