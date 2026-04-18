@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api.js";
 

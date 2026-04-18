@@ -5,6 +5,20 @@ import testingLibrary from "eslint-plugin-testing-library";
 import globals from "globals";
 
 export default tseslint.config(
+  // Global ignores must live in their own config object (only `ignores` key).
+  // Mixing with other keys downgrades it to per-file and stops ignoring
+  // directories — which is how built `dist/` bundles started getting linted.
+  {
+    ignores: [
+      "**/dist/**",
+      "**/node_modules/**",
+      "**/coverage/**",
+      "playwright-report/**",
+      "test-results/**",
+      "**/.vite/**",
+      "**/.claude/**",
+    ],
+  },
   {
     // `no-console` isn't enabled here (console.log is a legitimate first-run
     // UX path in server/src/index.ts), so existing `eslint-disable-next-line
@@ -13,20 +27,6 @@ export default tseslint.config(
     linterOptions: {
       reportUnusedDisableDirectives: "off",
     },
-    ignores: [
-      "dist/",
-      "**/dist/",
-      "node_modules/",
-      "**/node_modules/",
-      "coverage/",
-      "**/coverage/",
-      "playwright-report/",
-      "test-results/",
-      ".vite/",
-      "**/.vite/",
-      ".claude/",
-      "**/.claude/",
-    ],
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

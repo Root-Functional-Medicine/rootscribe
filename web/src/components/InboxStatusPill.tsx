@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import type { EffectiveInboxStatus } from "@applaud/shared";
 
 // Maps each status to a token in the existing design system. Kept next to the

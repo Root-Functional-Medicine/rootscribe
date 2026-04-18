@@ -1,6 +1,6 @@
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useEffect, useState, useCallback, useMemo } from "react";
+import { useRef, useEffect, useState, useCallback, useMemo, type JSX } from "react";
 import Markdown from "react-markdown";
 import { api } from "../api.js";
 import { Waveform } from "../components/Waveform.js";

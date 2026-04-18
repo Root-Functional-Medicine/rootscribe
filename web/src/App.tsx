@@ -1,6 +1,6 @@
 import { Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, type JSX } from "react";
 import { api } from "./api.js";
 import { SetupWizard } from "./routes/setup/SetupWizard.js";
 import { Dashboard } from "./routes/Dashboard.js";
