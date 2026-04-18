@@ -1,6 +1,24 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { cleanupTempDir, mkTempConfigDir } from "./helpers/test-server.js";
 
+// Mock the logger module BEFORE db.ts imports it. The real logger opens a
+// pino file destination at module load time (non-TTY runs write to
+// <configDir>/rootscribe.log, async). In CI on Node 22 that async write can
+// land AFTER the afterAll cleanupTempDir deletes the directory, surfacing
+// as an "Uncaught Exception: ENOENT" that fails the run. Swapping to an
+// in-memory stand-in eliminates the file I/O entirely — the real pino
+// destination is still exercised by integration tests that run against the
+// production server, where the log file's parent dir isn't being yanked
+// out from under it.
+const loggerMock = vi.hoisted(() => ({
+  warn: vi.fn(),
+  info: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
+vi.mock("../src/logger.js", () => ({ logger: loggerMock }));
+
 // Pre-stage a disposable config dir so getDb() doesn't clobber the user's
 // real state.sqlite. Must run before we import the db module so the paths
 // module reads our dir on first dbPath() call.
@@ -8,7 +26,6 @@ const originalConfigDir = process.env.ROOTSCRIBE_CONFIG_DIR;
 const configDir = mkTempConfigDir("rootscribe-db-singleton-");
 
 const { getDb, resetDbSingleton } = await import("../src/db.js");
-const { logger } = await import("../src/logger.js");
 
 afterAll(() => {
   resetDbSingleton();
@@ -56,14 +73,11 @@ describe("resetDbSingleton", () => {
     const closeSpy = vi.spyOn(cached, "close").mockImplementation(() => {
       throw new Error("simulated: database is locked — open statements");
     });
-    // Silence the warn call so pino's async file writer doesn't race the
-    // afterAll cleanupTempDir. (The assertion that warn is CALLED still
-    // runs — we just intercept the payload in memory.)
-    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => undefined);
+    loggerMock.warn.mockClear();
 
     // Should NOT throw — resetDbSingleton swallows the close error and logs.
     expect(() => resetDbSingleton()).not.toThrow();
-    expect(warnSpy).toHaveBeenCalledWith(
+    expect(loggerMock.warn).toHaveBeenCalledWith(
       expect.objectContaining({ err: expect.any(Error) }),
       expect.stringContaining("resetDbSingleton"),
     );
@@ -74,7 +88,6 @@ describe("resetDbSingleton", () => {
     expect(stillCached).toBe(cached);
 
     closeSpy.mockRestore();
-    warnSpy.mockRestore();
     // Actually close the handle so the rest of the suite starts clean.
     resetDbSingleton();
   });
