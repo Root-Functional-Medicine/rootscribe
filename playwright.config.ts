@@ -38,13 +38,24 @@ if (!explicitConfigDir) {
   process.env.ROOTSCRIBE_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
 }
 
+// Make the resolved dir visible to globalSetup (which seeds settings.json
+// and state.sqlite before the webServer boots). Playwright inherits this
+// process's env into both the globalSetup runner and — via `webServer.env`
+// — the server subprocess.
+process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
+
 export default defineConfig({
   testDir: "./tests/e2e",
+  globalSetup: path.join(here, "tests", "e2e", "global-setup.ts"),
   globalTeardown: path.join(here, "tests", "e2e", "global-teardown.ts"),
-  fullyParallel: true,
+  // Journey specs share a single seeded config dir and mutate it via the
+  // server's /api/_test/reset between tests. Running them in parallel would
+  // race on the DB handle even with resets, so we serialize. CI already
+  // sets workers: 1 for retry determinism; this keeps local runs honest too.
+  fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
+  workers: 1,
   reporter: [
     ["html", { outputFolder: "playwright-report", open: "never" }],
     ["list"],
@@ -80,6 +91,11 @@ export default defineConfig({
       // chromium. `--headed` / `--ui` still work for debugging the test
       // browser itself; this flag only silences the app.
       ROOTSCRIBE_NO_OPEN: "1",
+      // Enables the /api/_test/* routes so journey specs can reset mutable
+      // DB state between tests. server/src/index.ts MUST keep the
+      // `process.env.ROOTSCRIBE_E2E === "1"` guard — the routes must never
+      // register in a production process.
+      ROOTSCRIBE_E2E: "1",
     },
   },
 });
