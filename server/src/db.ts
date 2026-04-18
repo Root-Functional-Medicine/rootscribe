@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { ensureConfigDir, dbPath } from "./paths.js";
+import { logger } from "./logger.js";
 import type {
   RecordingRow,
   RecordingStatus,
@@ -31,15 +32,22 @@ export function getDb(): Database.Database {
 // getDb() call opens a fresh connection. Mirrors resetConfigCache() in
 // config.ts. Used by test fixtures that need to swap out state.sqlite
 // between scenarios without restarting the whole process.
+//
+// Only clears the cache when close() SUCCEEDS. If close throws (e.g. open
+// statements/iterators still in flight), the underlying SQLite handle is
+// still alive — nulling the cache here would let the next getDb() call
+// open a second connection against the same file, which can trip file
+// locks or leak FDs. Keep the bad handle cached and log so callers can
+// retry or diagnose.
 export function resetDbSingleton(): void {
-  if (db) {
-    try {
-      db.close();
-    } catch {
-      // Already closed, or WAL checkpoint failed — not test-fatal.
-    }
-    db = null;
+  if (!db) return;
+  try {
+    db.close();
+  } catch (err) {
+    logger.warn({ err }, "resetDbSingleton: db.close() failed — leaving cached handle in place");
+    return;
   }
+  db = null;
 }
 
 function migrate(d: Database.Database): void {

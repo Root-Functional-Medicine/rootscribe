@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it, vi } from "vitest";
 import { cleanupTempDir, mkTempConfigDir } from "./helpers/test-server.js";
 
 // Pre-stage a disposable config dir so getDb() doesn't clobber the user's
@@ -43,5 +43,29 @@ describe("resetDbSingleton", () => {
       .prepare<[string], { id: string }>("SELECT id FROM recordings WHERE id = ?")
       .get("singleton-probe");
     expect(row?.id).toBe("singleton-probe");
+  });
+
+  it("keeps the bad handle cached when close() throws, so a second getDb() does not open a parallel connection", () => {
+    // Bring a handle into the cache, then spy on close() to throw the way
+    // better-sqlite3 does when open statements are still in flight. The
+    // cache must NOT be nulled — nulling it would let the next getDb()
+    // open a second connection against the same state.sqlite, which
+    // risks file locks / FD leaks.
+    const cached = getDb();
+    const closeSpy = vi.spyOn(cached, "close").mockImplementation(() => {
+      throw new Error("simulated: database is locked — open statements");
+    });
+
+    // Should NOT throw — resetDbSingleton swallows the close error and logs.
+    expect(() => resetDbSingleton()).not.toThrow();
+
+    // Next getDb() should return the SAME (still-cached) handle, not a new one,
+    // because close() failed and we refused to null the cache.
+    const stillCached = getDb();
+    expect(stillCached).toBe(cached);
+
+    closeSpy.mockRestore();
+    // Actually close the handle so the rest of the suite starts clean.
+    resetDbSingleton();
   });
 });

@@ -1,7 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
 import { getDb } from "../db.js";
-import { resetMutableState } from "../test-seed/fixtures.js";
+import { resetConfigCache } from "../config.js";
+import { configDir } from "../paths.js";
+import { resetMutableState, resetSettingsToSeed } from "../test-seed/fixtures.js";
 
 // E2E-only test harness router. index.ts mounts this ONLY when
 // ROOTSCRIBE_E2E=1, so these routes never register in a production process.
@@ -11,8 +13,16 @@ import { resetMutableState } from "../test-seed/fixtures.js";
 export const testRouter = Router();
 
 testRouter.post("/reset", (_req, res) => {
+  // 1. DB: truncate mutable tables + restore seeded inbox_status/etc.
+  // 2. Settings: overwrite settings.json with the seeded baseline so
+  //    journey specs that mutate config (pollIntervalMinutes, webhook,
+  //    jiraBaseUrl) can't leak across test boundaries or retries.
+  // 3. Config cache: invalidate so the next loadConfig() picks up the
+  //    fresh file instead of returning the cached post-mutation value.
   const db = getDb();
   resetMutableState(db);
+  resetSettingsToSeed(configDir());
+  resetConfigCache();
   res.json({ ok: true });
 });
 

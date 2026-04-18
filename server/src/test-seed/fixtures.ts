@@ -3,6 +3,7 @@ import {
   copyFileSync,
   existsSync,
   mkdirSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -449,6 +450,36 @@ export function seedInitialState(
   fresh.close();
 
   for (const rec of SEED_RECORDINGS) writeRecordingFiles(recordingsDir, rec);
+}
+
+// Rewrites settings.json with the seed baseline while preserving the
+// bind.port the server is currently listening on (so tests that mutate
+// pollIntervalMinutes, webhook, etc. don't accidentally rebind the port
+// and break the currently-running server). The caller is responsible for
+// invoking resetConfigCache() so the next loadConfig() picks up the new
+// file. Intended for the /api/_test/reset handler — NEVER call from
+// production.
+export function resetSettingsToSeed(configDir: string): void {
+  const settingsFile = path.join(configDir, "settings.json");
+  // Preserve the live bind.port: the currently-running server is listening
+  // on it, and rewriting to the default would mean the server is bound to
+  // one port while settings.json claims another (confusing downstream code
+  // that reads cfg.bind.port after a refetch).
+  let port = DEFAULT_BIND_PORT;
+  if (existsSync(settingsFile)) {
+    try {
+      const existing = JSON.parse(readFileSync(settingsFile, "utf8")) as {
+        bind?: { port?: number };
+      };
+      if (typeof existing?.bind?.port === "number") port = existing.bind.port;
+    } catch {
+      // Corrupt settings.json — fall back to DEFAULT_BIND_PORT. The reset
+      // is about to rewrite it anyway.
+    }
+  }
+  const recordingsDir = path.join(configDir, "recordings");
+  const settings = { ...seedConfig(port), recordingsDir };
+  writeFileSync(settingsFile, JSON.stringify(settings, null, 2), { mode: 0o600 });
 }
 
 export function resetMutableState(d: Database.Database): void {

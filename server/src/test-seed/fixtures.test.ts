@@ -5,6 +5,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -15,6 +16,7 @@ import {
   SEED_RECORDINGS,
   SEED_TAGS,
   resetMutableState,
+  resetSettingsToSeed,
   seedConfig,
   seedInitialState,
 } from "./fixtures.js";
@@ -258,6 +260,50 @@ describe("resetMutableState", () => {
     expect(links.map((l) => l.issue_key)).toEqual(
       SEED_JIRA_LINKS.map((l) => l.issueKey).sort(),
     );
+  });
+
+  it("resetSettingsToSeed restores seeded keys while preserving bind.port", () => {
+    // Simulate a test that mutated settings.json via the real config route
+    // (e.g. the Settings journey that bumps pollIntervalMinutes to 5).
+    const settingsFile = path.join(configDir, "settings.json");
+    const dirty = {
+      setupComplete: true,
+      token: "leaked-token",
+      pollIntervalMinutes: 5,
+      jiraBaseUrl: "https://evil.example.com/browse/",
+      webhook: { url: "https://leak.example.com", enabled: true },
+      bind: { host: "127.0.0.1", port: 54321 },
+      recordingsDir: path.join(configDir, "recordings"),
+    };
+    writeFileSync(settingsFile, JSON.stringify(dirty, null, 2));
+
+    resetSettingsToSeed(configDir);
+
+    const restored = JSON.parse(readFileSync(settingsFile, "utf8"));
+    // Seeded keys are back to baseline...
+    expect(restored.pollIntervalMinutes).toBe(SEED_CONFIG_BASE.pollIntervalMinutes);
+    expect(restored.jiraBaseUrl).toBe(SEED_CONFIG_BASE.jiraBaseUrl);
+    expect(restored.webhook).toBeNull();
+    expect(restored.token).toBe(SEED_CONFIG_BASE.token);
+    // ...but bind.port was preserved (so the running server isn't out of sync
+    // with its own settings file).
+    expect(restored.bind.port).toBe(54321);
+  });
+
+  it("resetSettingsToSeed falls back to DEFAULT_BIND_PORT when settings.json is missing", () => {
+    // Freshly-minted configDir with no settings.json yet — the fallback path
+    // matters because the server could call reset before seedInitialState
+    // has ever written the file in some edge cases.
+    const freshDir = mkdtempSync(path.join(tmpdir(), "rootscribe-reset-missing-"));
+    try {
+      resetSettingsToSeed(freshDir);
+      const restored = JSON.parse(
+        readFileSync(path.join(freshDir, "settings.json"), "utf8"),
+      );
+      expect(restored.bind.port).toBe(DEFAULT_BIND_PORT);
+    } finally {
+      rmSync(freshDir, { recursive: true, force: true });
+    }
   });
 
   it("is idempotent — calling it twice leaves the same row counts", () => {
