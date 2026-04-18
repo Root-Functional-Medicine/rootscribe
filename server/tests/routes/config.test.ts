@@ -20,18 +20,23 @@ const { loadConfig, resetConfigCache } = await import("../../src/config.js");
 
 const app = makeTestApp((a) => a.use("/api/config", configRouter));
 
+// File-level afterAll: runs AFTER every describe block in this file has
+// finished. server/src/paths.ts reads APPLAUD_CONFIG_DIR on every call, so if
+// we restored + deleted the temp dir in the GET block's afterAll, the POST
+// block (which runs after in source order) would point at a nonexistent
+// directory — or worse, at the caller's real config dir. Keeping the
+// cleanup at file scope ensures the env + dir stay valid for the entire
+// suite and only get torn down when Vitest moves to the next file.
+afterAll(() => {
+  resetConfigCache();
+  cleanupTempDir(configDir);
+  if (originalConfigDir == null) delete process.env.APPLAUD_CONFIG_DIR;
+  else process.env.APPLAUD_CONFIG_DIR = originalConfigDir;
+});
+
 describe("GET /api/config", () => {
   beforeAll(() => {
     resetConfigCache();
-  });
-
-  afterAll(() => {
-    resetConfigCache();
-    cleanupTempDir(configDir);
-    // Restore BEFORE the next test file observes an env pointing at a dir
-    // that no longer exists.
-    if (originalConfigDir == null) delete process.env.APPLAUD_CONFIG_DIR;
-    else process.env.APPLAUD_CONFIG_DIR = originalConfigDir;
   });
 
   it("returns the default config on a fresh install (no settings.json yet)", async () => {
@@ -54,10 +59,6 @@ describe("GET /api/config", () => {
 
 describe("POST /api/config (validation)", () => {
   beforeAll(() => {
-    resetConfigCache();
-  });
-
-  afterAll(() => {
     resetConfigCache();
   });
 
