@@ -14,7 +14,7 @@
 $ErrorActionPreference = 'Stop'
 
 $RepoUrl    = if ($env:ROOTSCRIBE_REPO) { $env:ROOTSCRIBE_REPO } else { 'https://github.com/Root-Functional-Medicine/rootscribe.git' }
-$RepoRef    = if ($env:ROOTSCRIBE_REF)  { $env:ROOTSCRIBE_REF }  else { 'v0.5.5' }
+$RepoRef    = if ($env:ROOTSCRIBE_REF)  { $env:ROOTSCRIBE_REF }  else { 'v0.5.6' }
 $InstallDir = if ($env:ROOTSCRIBE_DIR)  { $env:ROOTSCRIBE_DIR }  else { Join-Path $PWD 'rootscribe' }
 $MinNodeMajor = 20
 

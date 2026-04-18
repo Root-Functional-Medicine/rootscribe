@@ -164,8 +164,8 @@ function buildTestPayload(): WebhookPayload & { test: true } {
       summary: `${base}/summary.md`,
     },
     content: {
-      transcript_text: "This is a sample transcript from an RootScribe test webhook.",
-      summary_markdown: "# Sample Summary\n\nThis is a sample summary from an RootScribe test webhook.",
+      transcript_text: "This is a sample transcript from a RootScribe test webhook.",
+      summary_markdown: "# Sample Summary\n\nThis is a sample summary from a RootScribe test webhook.",
     },
   };
 }
