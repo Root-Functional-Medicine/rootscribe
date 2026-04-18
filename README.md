@@ -209,7 +209,7 @@ Individual package suites can be run with `pnpm -C <package> vitest run` (e.g. `
 
 Coverage is tracked across lines, branches, functions, and statements (V8 provider). The root `vitest.config.ts` enforces baseline thresholds on every `pnpm test:coverage` run.
 
-Current baseline (Apr 2026, Vitest 4): **~10% lines, ~7% branches, ~11% functions, ~10% statements**. The numbers dropped vs. the earlier Vitest-2 baseline (~19% lines / ~78% branches / ~28% functions) because Vitest 4's v8 provider counts branches roughly 5.8× more granularly — actual test coverage is unchanged. The ratcheting plan lives in the "Increase test coverage to 95%" follow-up Story — each PR there bumps thresholds +5% until every axis sits ≥ 95%.
+Current baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #1): **~19% lines, ~12% branches, ~19% functions, ~19% statements**. The ratchet moved every axis by 4–8 points over the DEVX-100 Vitest-4 baseline via new unit tests for the server's pure-function + thin-HTTP-wrapper cluster (plus test-seam code). Playwright journey specs (recording list, inbox review, Jira link/unlink, settings) landed alongside — they don't count toward Vitest coverage but satisfy the E2E row in the DEVX-102 Definition of Done. Subsequent DEVX-102 PRs continue bumping each axis toward 95%.
 
 CI uploads the HTML coverage report as a workflow artifact and posts a per-PR summary comment via `davelosert/vitest-coverage-report-action`.
 
