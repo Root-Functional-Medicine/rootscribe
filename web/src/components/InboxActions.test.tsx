@@ -194,6 +194,6 @@ describe("InboxActions — mutations", () => {
     renderWithProviders(<InboxActions recording={makeRecording("new")} />);
 
     await user.click(screen.getByRole("button", { name: /mark reviewed/i }));
-    await waitFor(() => expect(screen.getByText(/nope/i)).toBeInTheDocument());
+    expect(await screen.findByText(/nope/i)).toBeInTheDocument();
   });
 });

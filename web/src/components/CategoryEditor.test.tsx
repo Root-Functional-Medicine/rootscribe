@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { InboxMutationResponse, RecordingDetail } from "@rootscribe/shared";
@@ -123,9 +123,9 @@ describe("CategoryEditor — edit mode", () => {
     );
 
     await user.click(screen.getByRole("button", { name: "billing" }));
-    const input = screen.getByRole<HTMLInputElement>("combobox");
-    expect(input).toHaveFocus();
-    expect(input).toHaveValue("billing");
+    const editInput = screen.getByRole<HTMLInputElement>("combobox");
+    expect(editInput).toHaveFocus();
+    expect(editInput).toHaveValue("billing");
   });
 
   it("commits the new value via PATCH on Enter", async () => {
@@ -193,8 +193,11 @@ describe("CategoryEditor — edit mode", () => {
       <CategoryEditor recordingId="rec-1" category="billing" availableCategories={[]} />,
     );
     await user.click(screen.getByRole("button", { name: "billing" }));
-    const input = screen.getByRole<HTMLInputElement>("combobox");
-    await user.tab(); // commit with unchanged value
+    // Open edit mode; immediately commit via tab without changing the value.
+    // We don't need to hold the input reference — the tab fires blur on the
+    // focused element.
+    expect(screen.getByRole("combobox")).toHaveFocus();
+    await user.tab();
 
     expect(stub.fetch).not.toHaveBeenCalled();
     // And we return to display mode.
@@ -227,8 +230,12 @@ describe("CategoryEditor — edit mode", () => {
     );
     await user.click(screen.getByRole("button", { name: /add category/i }));
 
-    const options = container.querySelectorAll("datalist option");
-    expect(Array.from(options).map((o) => o.getAttribute("value"))).toEqual([
+    // Datalist <option>s don't expose role="option" in happy-dom, so fall
+    // back to querySelector. Testing the rendered datalist is the point —
+    // no Testing Library API reaches it.
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const options = container.querySelectorAll<HTMLOptionElement>("datalist option");
+    expect(Array.from(options).map((o) => o.value)).toEqual([
       "alpha",
       "beta",
       "gamma",

@@ -119,9 +119,14 @@ describe("InboxFilters — tag + category inputs", () => {
         })}
       />,
     );
+    // Datalist options have no accessibility role in happy-dom. Scope the
+    // query by the datalist id so we're asserting the wire-up, not bulk
+    // matching across two lists.
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const tagOpts = container.querySelectorAll<HTMLOptionElement>(
       "#inbox-tags-list option",
     );
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
     const catOpts = container.querySelectorAll<HTMLOptionElement>(
       "#inbox-categories-list option",
     );

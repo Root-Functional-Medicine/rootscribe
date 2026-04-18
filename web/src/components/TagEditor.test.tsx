@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { InboxMutationResponse, RecordingDetail } from "@rootscribe/shared";
@@ -81,11 +81,9 @@ describe("TagEditor — rendering", () => {
         availableTags={["alpha", "beta"]}
       />,
     );
-    const options = container.querySelectorAll("datalist option");
-    expect(Array.from(options).map((o) => o.getAttribute("value"))).toEqual([
-      "alpha",
-      "beta",
-    ]);
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const options = container.querySelectorAll<HTMLOptionElement>("datalist option");
+    expect(Array.from(options).map((o) => o.value)).toEqual(["alpha", "beta"]);
   });
 
   it("disables the Add button when the draft is empty or whitespace-only", async () => {
@@ -181,7 +179,7 @@ describe("TagEditor — adding tags", () => {
 
     await waitFor(() => expect(stub.fetch).toHaveBeenCalledTimes(1));
     // Error message surfaced, draft intact.
-    await waitFor(() => expect(screen.getByText(/couldn't add tag/i)).toBeInTheDocument());
+    expect(await screen.findByText(/couldn't add tag/i)).toBeInTheDocument();
     expect(input).toHaveValue("retryable");
   });
 });

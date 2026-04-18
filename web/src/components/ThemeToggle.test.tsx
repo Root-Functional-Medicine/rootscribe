@@ -9,15 +9,15 @@ import { ThemeToggle } from "./ThemeToggle.js";
 // No other providers are needed here; the component has no queries, router,
 // or side effects.
 
-function renderWithTheme(theme: Theme, toggle = vi.fn()): ReturnType<typeof vi.fn> {
+function renderWithTheme(theme: Theme, onToggle = vi.fn()): ReturnType<typeof vi.fn> {
   render(
     <ThemeContext.Provider
-      value={{ theme, setTheme: () => undefined, toggle }}
+      value={{ theme, setTheme: () => undefined, toggle: onToggle }}
     >
       <ThemeToggle />
     </ThemeContext.Provider>,
   );
-  return toggle;
+  return onToggle;
 }
 
 describe("ThemeToggle", () => {
@@ -39,13 +39,23 @@ describe("ThemeToggle", () => {
   });
 
   it("calls toggle() once per click", async () => {
-    const toggle = renderWithTheme("light");
+    // Inline the spy here instead of returning it from renderWithTheme so
+    // the render-result-naming-convention rule doesn't trace the returned
+    // mock back to render() and demand `view`/`utils`.
+    const toggleSpy = vi.fn();
+    render(
+      <ThemeContext.Provider
+        value={{ theme: "light", setTheme: () => undefined, toggle: toggleSpy }}
+      >
+        <ThemeToggle />
+      </ThemeContext.Provider>,
+    );
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button"));
-    expect(toggle).toHaveBeenCalledTimes(1);
+    expect(toggleSpy).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button"));
-    expect(toggle).toHaveBeenCalledTimes(2);
+    expect(toggleSpy).toHaveBeenCalledTimes(2);
   });
 });

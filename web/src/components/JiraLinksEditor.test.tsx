@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { InboxMutationResponse, JiraLink, RecordingDetail } from "@rootscribe/shared";
@@ -228,9 +228,7 @@ describe("JiraLinksEditor — adding links", () => {
     await user.type(screen.getByPlaceholderText("ISSUE-123"), "ROOT-1");
     await user.click(screen.getByRole("button", { name: /^link issue$/i }));
 
-    await waitFor(() =>
-      expect(screen.getByText(/couldn't link issue/i)).toBeInTheDocument(),
-    );
+    expect(await screen.findByText(/couldn't link issue/i)).toBeInTheDocument();
   });
 });
 

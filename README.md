@@ -209,7 +209,7 @@ Individual package suites can be run with `pnpm -C <package> vitest run` (e.g. `
 
 Coverage is tracked across lines, branches, functions, and statements (V8 provider). The root `vitest.config.ts` enforces baseline thresholds on every `pnpm test:coverage` run.
 
-Current baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #2): **~39% lines, ~29% branches, ~32% functions, ~37% statements**. Ratchet #2 added unit tests for the server routes cluster — `routes/sync`, `routes/media` (with traversal + HTTP Range coverage), `sync/state` (the DB CRUD module), and all 11 endpoints of `routes/recordings` — pushing every axis by another 13–17 points. Ratchet #1 landed the pure-function server cluster (sync/events, sync/layout, auth/profiles, plaud/list/audio/detail) plus the four Playwright journey specs (recording list, inbox review, Jira link/unlink, settings). Subsequent DEVX-102 PRs continue bumping each axis toward 95%.
+Current baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #3): **~53% lines, ~41% branches, ~54% functions, ~50% statements**. Ratchet #3 introduced `web/src/test-utils.tsx` (QueryClient + Router + Theme provider harness) and covered every untested web component + the `useTheme` hook, pushing each axis by 12–22 points. Ratchet #2 covered the server routes cluster (`routes/sync`, `routes/media`, `sync/state`, all 11 endpoints of `routes/recordings`). Ratchet #1 landed the pure-function server cluster + the four Playwright journey specs. Subsequent DEVX-102 PRs continue bumping each axis toward 95%.
 
 CI uploads the HTML coverage report as a workflow artifact and posts a per-PR summary comment via `davelosert/vitest-coverage-report-action`.
 
