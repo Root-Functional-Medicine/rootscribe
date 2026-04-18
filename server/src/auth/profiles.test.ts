@@ -93,7 +93,7 @@ describe("discoverProfiles on macOS", () => {
 
     const found = discoverProfiles();
     expect(found).toHaveLength(1);
-    expect(found[0].profile).toBe("Default");
+    expect(found[0]!.profile).toBe("Default");
   });
 
   it("ignores a profile directory that exists but has no Local Storage/leveldb inside", () => {
@@ -177,7 +177,7 @@ describe("discoverProfiles on Windows", () => {
 
     const found = discoverProfiles();
     expect(found).toHaveLength(1);
-    expect(found[0].browser).toBe("Chrome");
+    expect(found[0]!.browser).toBe("Chrome");
   });
 
   it("falls back to ~/AppData/Local when LOCALAPPDATA is unset", () => {
@@ -189,7 +189,7 @@ describe("discoverProfiles on Windows", () => {
 
     const found = discoverProfiles();
     expect(found).toHaveLength(1);
-    expect(found[0].browser).toBe("Edge");
+    expect(found[0]!.browser).toBe("Edge");
   });
 });
 

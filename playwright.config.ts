@@ -3,6 +3,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { seedInitialState } from "./server/src/test-seed/fixtures.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -38,11 +39,17 @@ if (!explicitConfigDir) {
   process.env.ROOTSCRIBE_E2E_TEARDOWN_DIR = E2E_CONFIG_DIR;
 }
 
-// Make the resolved dir visible to globalSetup (which seeds settings.json
-// and state.sqlite before the webServer boots). Playwright inherits this
-// process's env into both the globalSetup runner and — via `webServer.env`
-// — the server subprocess.
+// Make the resolved dir visible to globalSetup (which re-seeds between
+// retries) and — via `webServer.env` — the server subprocess.
 process.env.ROOTSCRIBE_CONFIG_DIR = E2E_CONFIG_DIR;
+
+// Seed the config dir HERE, at config-load time, instead of in globalSetup.
+// Playwright starts webServer before running globalSetup by default, so any
+// seed written there lands AFTER the server's config/db singletons have
+// already latched onto an empty settings.json. Writing at config-load time
+// guarantees the fixtures exist before `pnpm start:nobuild` / `pnpm dev`
+// forks.
+seedInitialState(E2E_CONFIG_DIR);
 
 export default defineConfig({
   testDir: "./tests/e2e",

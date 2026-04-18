@@ -19,7 +19,7 @@ describe("emit", () => {
     emit("poll_start");
 
     expect(received).toHaveLength(1);
-    expect(received[0].type).toBe("poll_start");
+    expect(received[0]!.type).toBe("poll_start");
   });
 
   it("stamps the `at` field with the current time in milliseconds", () => {
@@ -31,7 +31,7 @@ describe("emit", () => {
 
     emit("poll_end");
 
-    expect(received[0].at).toBe(frozen);
+    expect(received[0]!.at).toBe(frozen);
     vi.restoreAllMocks();
   });
 
@@ -57,7 +57,7 @@ describe("emit", () => {
 
     emit("poll_start", { at: 1 });
 
-    expect(received[0].at).toBe(1);
+    expect(received[0]!.at).toBe(1);
   });
 });
 
@@ -71,7 +71,7 @@ describe("syncEvents.onEvent", () => {
     emit("poll_end");
 
     expect(received).toHaveLength(1);
-    expect(received[0].type).toBe("poll_start");
+    expect(received[0]!.type).toBe("poll_start");
   });
 
   it("fans out to every registered listener", () => {
@@ -84,8 +84,8 @@ describe("syncEvents.onEvent", () => {
 
     expect(a).toHaveLength(1);
     expect(b).toHaveLength(1);
-    expect(a[0].message).toBe("boom");
-    expect(b[0].message).toBe("boom");
+    expect(a[0]!.message).toBe("boom");
+    expect(b[0]!.message).toBe("boom");
   });
 
   it("unsubscribing one listener does not affect others", () => {

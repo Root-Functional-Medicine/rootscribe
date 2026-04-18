@@ -1,37 +1,26 @@
 import { test, expect } from "@playwright/test";
 
-// Smoke-level journey: the server process boots, serves the SPA, and the
-// setup-wizard redirect fires on a first-run config. Playwright's webServer
-// block (see playwright.config.ts) runs `pnpm start` in CI against a scratch
-// ROOTSCRIBE_CONFIG_DIR, so this exercises the real production build + Express
-// route guard + React router, not a mocked app shell.
+// Smoke-level checks against the seeded config populated by global-setup.ts.
+// Every other journey spec assumes the same fixtures (12 recordings, a
+// pre-linked ROOT-101, etc.); this file is the canary that catches broken
+// boot / routing / static-asset plumbing before those richer assertions run.
 
-test.describe("RootScribe smoke journey", () => {
-  test("loads the root URL and redirects to the setup wizard on a fresh install", async ({
+test.describe("RootScribe smoke (seeded)", () => {
+  test("GET / renders the dashboard directly — setupComplete is true in the fixture", async ({
     page,
   }) => {
     await page.goto("/");
 
-    // The React route guard redirects to /setup/welcome when setup is
-    // incomplete. We wait for the final URL rather than asserting on /
-    // directly, because the guard fires client-side after the initial SPA
-    // shell loads.
-    await expect(page).toHaveURL(/\/setup/);
+    // The route guard that redirects to /setup fires only when setupComplete
+    // is false. Against a seeded (completed) config, the SPA should render
+    // the Dashboard route directly.
+    await expect(page).not.toHaveURL(/\/setup/);
+    await expect(
+      page.getByRole("heading", { level: 1, name: /recordings/i }),
+    ).toBeVisible({ timeout: 10_000 });
   });
 
-  test("renders the Welcome step with navigable 'Start' control", async ({
-    page,
-  }) => {
-    await page.goto("/setup");
-
-    // The Welcome step is the first wizard page. Any brand text or the Start
-    // button serves as a load signal — we assert on the button because it's
-    // the exact control a user would click next.
-    const startButton = page.getByRole("button", { name: /start|begin|continue|next/i }).first();
-    await expect(startButton).toBeVisible({ timeout: 10_000 });
-  });
-
-  test("exposes a JSON health check at /api/setup/status", async ({
+  test("/api/setup/status reflects the seeded fixture (all three flags true)", async ({
     request,
   }) => {
     const response = await request.get("/api/setup/status");
@@ -39,9 +28,21 @@ test.describe("RootScribe smoke journey", () => {
 
     const body = await response.json();
     expect(body).toMatchObject({
-      setupComplete: false,
-      hasToken: false,
-      hasRecordingsDir: false,
+      setupComplete: true,
+      hasToken: true,
+      hasRecordingsDir: true,
     });
+  });
+
+  test("the /api/_test/reset gate is mounted under ROOTSCRIBE_E2E=1", async ({
+    request,
+  }) => {
+    // Belt-and-suspenders: the production-safety assertion in
+    // server/tests/routes/_test.test.ts reads the source to verify the gate;
+    // this one proves the server ACTUALLY exposes the route under the flag
+    // we're exercising in E2E. A regression that neuters the flag would
+    // fail the server tests AND this one.
+    const response = await request.post("/api/_test/reset");
+    expect(response.ok()).toBe(true);
   });
 });

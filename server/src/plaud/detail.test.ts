@@ -121,8 +121,8 @@ describe("getFileDetail", () => {
 
     const got = await getFileDetail("abc123");
     expect(got.content_list).toHaveLength(2);
-    expect(got.content_list[0].data_type).toBe("transaction");
-    expect(got.content_list[1].data_type).toBe("auto_sum_note");
+    expect(got.content_list[0]!.data_type).toBe("transaction");
+    expect(got.content_list[1]!.data_type).toBe("auto_sum_note");
   });
 
   it("propagates errors from plaudJson (no internal swallowing)", async () => {

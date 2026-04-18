@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from "vitest";
-import { cleanupTempDir, mkTempConfigDir } from "../tests/helpers/test-server.js";
+import { cleanupTempDir, mkTempConfigDir } from "./helpers/test-server.js";
 
 // Pre-stage a disposable config dir so getDb() doesn't clobber the user's
 // real state.sqlite. Must run before we import the db module so the paths
@@ -7,7 +7,7 @@ import { cleanupTempDir, mkTempConfigDir } from "../tests/helpers/test-server.js
 const originalConfigDir = process.env.ROOTSCRIBE_CONFIG_DIR;
 const configDir = mkTempConfigDir("rootscribe-db-singleton-");
 
-const { getDb, resetDbSingleton } = await import("./db.js");
+const { getDb, resetDbSingleton } = await import("../src/db.js");
 
 afterAll(() => {
   resetDbSingleton();
