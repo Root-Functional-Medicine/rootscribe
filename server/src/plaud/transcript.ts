@@ -132,19 +132,23 @@ export function extractSummaryMarkdown(resp: TranssummResponse): string | null {
   if (!raw) return null;
 
   // Plaud returns this field as either a structured object OR a JSON-encoded string.
-  let obj: SummaryContent;
+  // JSON.parse can legally return null / number / array / bare string, so we
+  // must shape-check before casting — otherwise `obj.content` would throw on
+  // inputs like `raw === "null"` or `raw === "42"`.
+  let parsed: unknown;
   if (typeof raw === "string") {
     try {
-      obj = JSON.parse(raw) as SummaryContent;
+      parsed = JSON.parse(raw);
     } catch {
       // Not JSON — fall back to treating the raw string as markdown itself.
       return raw.trim().length > 0 ? raw : null;
     }
   } else {
-    obj = raw;
+    parsed = raw;
   }
 
-  const content = obj.content;
+  if (!parsed || typeof parsed !== "object") return null;
+  const content = (parsed as SummaryContent).content;
   if (typeof content === "string") {
     return content.trim().length > 0 ? content : null;
   }

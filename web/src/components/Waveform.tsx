@@ -140,13 +140,13 @@ export function Waveform({ recordingId, progress, onSeek }: WaveformProps): JSX.
           ref={gradRef}
         >
           {/* dim → glow-start → bright-start → center → bright-end → glow-end → dim */}
-          <stop offset="0%" stopColor="rgb(var(--color-surface-container-highest))" stopOpacity="0.25" />
-          <stop offset="0%" stopColor="rgb(var(--color-surface-container-highest))" stopOpacity="0.25" />
-          <stop offset="0%" stopColor="rgb(var(--color-primary))" stopOpacity="0.4" />
-          <stop offset="0%" stopColor="rgb(var(--color-primary))" stopOpacity="1" />
-          <stop offset="0%" stopColor="rgb(var(--color-primary))" stopOpacity="0.4" />
-          <stop offset="0%" stopColor="rgb(var(--color-surface-container-highest))" stopOpacity="0.25" />
-          <stop offset="100%" stopColor="rgb(var(--color-surface-container-highest))" stopOpacity="0.25" />
+          <stop offset="0%" stopColor="var(--color-surface-container-highest)" stopOpacity="0.25" />
+          <stop offset="0%" stopColor="var(--color-surface-container-highest)" stopOpacity="0.25" />
+          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.4" />
+          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="1" />
+          <stop offset="0%" stopColor="var(--color-primary)" stopOpacity="0.4" />
+          <stop offset="0%" stopColor="var(--color-surface-container-highest)" stopOpacity="0.25" />
+          <stop offset="100%" stopColor="var(--color-surface-container-highest)" stopOpacity="0.25" />
         </linearGradient>
       </defs>
       <path d={path} fill={`url(#${gradId})`} />
