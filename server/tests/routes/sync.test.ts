@@ -25,6 +25,24 @@ vi.mock("../../src/sync/state.js", () => stateMock);
 const { syncRouter } = await import("../../src/routes/sync.js");
 const { makeTestApp } = await import("../helpers/test-server.js");
 
+// Poll `predicate` every `intervalMs` until it returns true or `timeoutMs`
+// elapses. Prefer this over fixed setTimeouts in async assertions — a hard
+// delay that's long enough for a loaded CI runner slows every happy-path
+// run, and a short one flakes there. The overall cap still catches real
+// regressions where the predicate never becomes true.
+async function waitFor(
+  predicate: () => boolean,
+  { timeoutMs = 2000, intervalMs = 10 }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() > deadline) {
+      throw new Error(`waitFor: predicate did not become true within ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 describe("GET /api/sync/status", () => {
   beforeEach(() => {
     pollerMock.status.mockReset();
@@ -126,8 +144,15 @@ describe("GET /api/sync/events (SSE)", () => {
   });
 
   afterEach(() => {
+    // Guard against boot() having thrown before assigning `server`: optional
+    // chaining on a falsy server would skip close() and never call resolve(),
+    // hanging the afterEach indefinitely.
+    if (!server) return Promise.resolve();
     return new Promise<void>((resolve) => {
-      server?.close(() => resolve());
+      server.close(() => {
+        server = undefined as unknown as Server;
+        resolve();
+      });
     });
   });
 
@@ -180,8 +205,10 @@ describe("GET /api/sync/events (SSE)", () => {
     controller.abort();
     await reader.cancel().catch(() => undefined);
 
-    // Give the server a microtask to fire its 'close' handler.
-    await new Promise((r) => setTimeout(r, 50));
+    // Poll until unsub fires instead of sleeping a fixed 50ms — that's
+    // flaky on loaded CI runners. The overall 2s cap keeps the test
+    // deterministic if something regresses and unsub never fires.
+    await waitFor(() => unsub.mock.calls.length > 0, { timeoutMs: 2000 });
     expect(unsub).toHaveBeenCalled();
   });
 });
