@@ -52,6 +52,11 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
       // retry. Any other non-OK is terminal.
       if (response.status === 502 || response.status === 503) {
         if (attempt < MAX_ATTEMPTS) {
+          // Cancel the body before sleeping so undici can release the
+          // socket immediately instead of keeping it half-open for the
+          // full BACKOFF_MS window. Swallow the cancel error — if the
+          // body is already consumed or closed there's nothing to do.
+          await response.body?.cancel().catch(() => undefined);
           await sleep(BACKOFF_MS);
           continue;
         }
