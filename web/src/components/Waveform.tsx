@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useMemo } from "react";
+import { useRef, useEffect, useCallback, useMemo, type JSX } from "react";
 
 interface WaveformProps {
   recordingId: string;

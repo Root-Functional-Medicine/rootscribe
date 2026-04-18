@@ -1,3 +1,4 @@
+import type { JSX } from "react";
 import type { RecordingsListFilter } from "@applaud/shared";
 
 interface InboxFiltersProps {

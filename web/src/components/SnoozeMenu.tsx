@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject, type JSX } from "react";
 
 interface SnoozeMenuProps {
   onSelect: (snoozedUntil: number) => void;

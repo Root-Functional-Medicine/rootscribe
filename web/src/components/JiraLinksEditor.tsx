@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type JSX } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { JiraLink, InboxMutationResponse } from "@applaud/shared";
 import { isValidJiraKey, buildJiraUrl } from "@applaud/shared";

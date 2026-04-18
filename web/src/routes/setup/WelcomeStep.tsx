@@ -1,3 +1,5 @@
+import type { JSX } from "react";
+
 export function WelcomeStep({ onNext }: { onNext: () => void }): JSX.Element {
   return (
     <div className="space-y-8">

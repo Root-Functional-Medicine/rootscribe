@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { RecordingDetail, InboxStatus, InboxMutationResponse } from "@applaud/shared";
 import { api } from "../api.js";

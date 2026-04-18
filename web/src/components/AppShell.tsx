@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { Outlet, NavLink, useLocation } from "react-router-dom";
 import { SyncStatusBadge } from "./SyncStatusBadge.js";
 import { ThemeToggle } from "./ThemeToggle.js";
