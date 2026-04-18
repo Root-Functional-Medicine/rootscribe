@@ -13,6 +13,8 @@ import { syncRouter } from "./routes/sync.js";
 import { mediaRouter } from "./routes/media.js";
 import { poller } from "./sync/poller.js";
 
+const E2E_FLAG = "ROOTSCRIBE_E2E";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -95,6 +97,15 @@ async function main(): Promise<void> {
   app.use("/api/sync", syncRouter);
   app.use("/media", mediaRouter);
 
+  // Test-only routes for Playwright's /reset and /fast-forward-snooze. The
+  // dynamic import keeps the fixture module (which pulls in better-sqlite3
+  // for a second time + seed data) out of the production path entirely.
+  if (process.env[E2E_FLAG] === "1") {
+    const { testRouter } = await import("./routes/_test.js");
+    app.use("/api/_test", testRouter);
+    logger.warn("E2E test routes enabled — this must never happen in production");
+  }
+
   app.get("/api/setup/status", (_req, res) => {
     const current = loadConfig();
     res.json({
@@ -143,6 +154,13 @@ async function main(): Promise<void> {
         // eslint-disable-next-line no-console
         console.log(`  (Headless host detected. Open ${url}/setup manually.)\n`);
       }
+    } else if (process.env[E2E_FLAG] === "1") {
+      // Under the E2E harness, the seeded settings.json has setupComplete=true
+      // and a placeholder token. Starting the poller here would trigger
+      // outbound Plaud API calls with a fake bearer (producing noisy 401s)
+      // and — more importantly — could mutate state.sqlite mid-test when a
+      // response does land. Skip it so Playwright's state is deterministic.
+      logger.warn("E2E mode — skipping poller.start() to keep test state deterministic");
     } else {
       poller.start();
     }
