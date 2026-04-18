@@ -2,7 +2,13 @@ import Database from "better-sqlite3";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { ensureConfigDir, dbPath } from "./paths.js";
-import type { RecordingRow, RecordingStatus } from "@applaud/shared";
+import type {
+  RecordingRow,
+  RecordingStatus,
+  InboxStatus,
+  EffectiveInboxStatus,
+  JiraLink,
+} from "@applaud/shared";
 
 let db: Database.Database | null = null;
 
@@ -184,7 +190,28 @@ function statusOf(row: RecordingDbRow): RecordingStatus {
   return "complete";
 }
 
-export function rowToRecording(row: RecordingDbRow): RecordingRow {
+// Mirrors the inbox-mcp semantics exactly: "snoozed" is not a real inbox_status
+// value — it's inbox_status='new' with snoozed_until in the future. Computing it
+// here keeps the client from needing its own clock that could drift from the DB.
+export function effectiveInboxStatus(
+  row: Pick<RecordingDbRow, "inbox_status" | "snoozed_until">,
+  now: number = Date.now(),
+): EffectiveInboxStatus {
+  if (row.inbox_status === "new" && row.snoozed_until != null && row.snoozed_until > now) {
+    return "snoozed";
+  }
+  return row.inbox_status as InboxStatus;
+}
+
+// `now` is optional — list queries thread the same `now` they used for the
+// snooze filter through to `effectiveInboxStatus` so filter results and per-
+// row statuses agree at the snooze-expiry boundary. Callers fetching a single
+// row don't need this coordination and can omit it.
+export function rowToRecording(
+  row: RecordingDbRow,
+  tags: string[] = [],
+  now?: number,
+): RecordingRow {
   return {
     id: row.id,
     filename: row.filename,
@@ -206,7 +233,86 @@ export function rowToRecording(row: RecordingDbRow): RecordingRow {
     isHistorical: row.is_historical === 1,
     lastError: row.last_error,
     status: statusOf(row),
+    inboxStatus: row.inbox_status as InboxStatus,
+    effectiveInboxStatus: effectiveInboxStatus(row, now),
+    category: row.category,
+    snoozedUntil: row.snoozed_until,
+    reviewedAt: row.reviewed_at,
+    tags,
   };
+}
+
+// Batch-load tags for a set of recording IDs to avoid N+1 when rendering the
+// list. Returns a Map keyed by recording_id; recordings with no tags get [].
+export function loadTagsForRecordings(ids: string[]): Map<string, string[]> {
+  const result = new Map<string, string[]>();
+  if (ids.length === 0) return result;
+  const db = getDb();
+  // better-sqlite3 caches prepared statements, but the IN-clause arity changes
+  // per call, so we build the placeholder list each time. Small cost, acceptable
+  // for dashboard pagination (limit 500 max).
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db
+    .prepare<string[], { recording_id: string; tag: string }>(
+      `SELECT recording_id, tag FROM recording_tags WHERE recording_id IN (${placeholders}) ORDER BY tag`,
+    )
+    .all(...ids);
+  for (const id of ids) result.set(id, []);
+  for (const r of rows) {
+    const existing = result.get(r.recording_id);
+    if (existing) existing.push(r.tag);
+  }
+  return result;
+}
+
+export function loadTagsForRecording(id: string): string[] {
+  const db = getDb();
+  return (db
+    .prepare<[string], { tag: string }>(
+      "SELECT tag FROM recording_tags WHERE recording_id = ? ORDER BY tag",
+    )
+    .all(id)).map((r) => r.tag);
+}
+
+export function loadJiraLinksForRecording(id: string): JiraLink[] {
+  const db = getDb();
+  const rows = db
+    .prepare<
+      [string],
+      {
+        id: number;
+        issue_key: string;
+        issue_url: string | null;
+        relation: string;
+        created_at: number;
+      }
+    >(
+      "SELECT id, issue_key, issue_url, relation, created_at FROM recording_jira_links WHERE recording_id = ? ORDER BY created_at DESC",
+    )
+    .all(id);
+  return rows.map((r) => ({
+    id: r.id,
+    issueKey: r.issue_key,
+    issueUrl: r.issue_url,
+    relation: r.relation,
+    createdAt: r.created_at,
+  }));
+}
+
+export function loadAllTags(): string[] {
+  const db = getDb();
+  return (db
+    .prepare<[], { tag: string }>("SELECT DISTINCT tag FROM recording_tags ORDER BY tag")
+    .all()).map((r) => r.tag);
+}
+
+export function loadAllCategories(): string[] {
+  const db = getDb();
+  return (db
+    .prepare<[], { category: string }>(
+      "SELECT DISTINCT category FROM recordings WHERE category IS NOT NULL AND category <> '' ORDER BY category",
+    )
+    .all()).map((r) => r.category);
 }
 
 export type { RecordingDbRow };

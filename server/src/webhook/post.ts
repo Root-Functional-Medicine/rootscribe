@@ -5,6 +5,8 @@ import { loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { logger } from "../logger.js";
 
+import { encodeFolderPath } from "../lib/url.js";
+
 const BACKOFF_MS = [5_000, 30_000, 120_000];
 
 function readIfExists(absPath: string): string | null {
@@ -20,7 +22,7 @@ function readIfExists(absPath: string): string | null {
 function buildPayload(event: WebhookEvent, row: RecordingRow): WebhookPayload {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURI(row.folder)}`;
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeFolderPath(row.folder)}`;
   const payload: WebhookPayload = {
     event,
     recording: {
@@ -136,7 +138,7 @@ function buildTestPayload(): WebhookPayload & { test: true } {
   const cfg = loadConfig();
   const host = cfg.bind.host === "0.0.0.0" ? "127.0.0.1" : cfg.bind.host;
   const folder = "2026/04/11/sample-recording";
-  const base = `http://${host}:${cfg.bind.port}/media/${encodeURI(folder)}`;
+  const base = `http://${host}:${cfg.bind.port}/media/${encodeFolderPath(folder)}`;
   const now = Date.now();
   return {
     test: true,

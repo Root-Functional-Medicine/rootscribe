@@ -1,7 +1,22 @@
 import { renameSync, existsSync } from "node:fs";
 import path from "node:path";
-import type { RecordingRow, PlaudRawRecording } from "@applaud/shared";
-import { getDb, rowToRecording, type RecordingDbRow } from "../db.js";
+import type {
+  RecordingRow,
+  PlaudRawRecording,
+  RecordingsListFilter,
+  InboxStatus,
+  JiraLink,
+} from "@applaud/shared";
+import {
+  getDb,
+  rowToRecording,
+  loadTagsForRecordings,
+  loadTagsForRecording,
+  loadJiraLinksForRecording,
+  loadAllTags,
+  loadAllCategories,
+  type RecordingDbRow,
+} from "../db.js";
 import { folderName, recordingPaths } from "./layout.js";
 import { loadConfig } from "../config.js";
 import { logger } from "../logger.js";
@@ -136,40 +151,108 @@ export function clearError(id: string): void {
   getDb().prepare("UPDATE recordings SET last_error = NULL WHERE id = ?").run(id);
 }
 
-export function listRecordingRows(
-  opts: { limit?: number; offset?: number; search?: string } = {},
-): { total: number; totalBytes: number; items: RecordingRow[] } {
+export interface ListRecordingsOptions {
+  limit?: number;
+  offset?: number;
+  search?: string;
+  filter?: RecordingsListFilter;
+  tag?: string;
+  category?: string;
+  // When true, also return the `availableTags` / `availableCategories` facets
+  // for autocomplete. Two DISTINCT scans on every list request would be
+  // wasteful for frequent filter/search refetches — callers opt in.
+  facets?: boolean;
+}
+
+// Build the WHERE clause for the filter axis. Returns a SQL fragment plus the
+// ordered list of bind parameters. Centralized so COUNT(*) and the paged SELECT
+// stay in lockstep — filter drift between them would return wrong totals.
+function filterClause(
+  filter: RecordingsListFilter | undefined,
+  now: number,
+): { sql: string; params: unknown[] } {
+  switch (filter) {
+    case "active":
+    case "new":
+      // "active" and "new" both mean inbox_status='new' AND not currently snoozed.
+      // Matches inbox-mcp listNew() semantics.
+      return {
+        sql: "inbox_status = 'new' AND (snoozed_until IS NULL OR snoozed_until <= ?)",
+        params: [now],
+      };
+    case "snoozed":
+      return {
+        sql: "inbox_status = 'new' AND snoozed_until IS NOT NULL AND snoozed_until > ?",
+        params: [now],
+      };
+    case "reviewed":
+      return { sql: "inbox_status = 'reviewed'", params: [] };
+    case "archived":
+      return { sql: "inbox_status = 'archived'", params: [] };
+    case "all":
+    case undefined:
+      return { sql: "1=1", params: [] };
+  }
+}
+
+export function listRecordingRows(opts: ListRecordingsOptions = {}): {
+  total: number;
+  totalBytes: number;
+  items: RecordingRow[];
+  availableTags: string[];
+  availableCategories: string[];
+} {
   const db = getDb();
   const limit = Math.min(opts.limit ?? 100, 500);
   const offset = Math.max(opts.offset ?? 0, 0);
   const search = opts.search?.trim();
+  const now = Date.now();
+  const { sql: filterSql, params: filterParams } = filterClause(opts.filter, now);
 
-  let aggRow: { c: number; b: number } | undefined;
-  let rows: RecordingDbRow[];
+  const conditions: string[] = [filterSql];
+  const params: unknown[] = [...filterParams];
+
   if (search) {
     const like = `%${search}%`;
-    aggRow = db
-      .prepare<[string, string], { c: number; b: number }>(
-        "SELECT COUNT(*) AS c, COALESCE(SUM(filesize_bytes), 0) AS b FROM recordings WHERE filename LIKE ? OR transcript_text LIKE ?",
-      )
-      .get(like, like);
-    rows = db
-      .prepare<[string, string, number, number], RecordingDbRow>(
-        "SELECT * FROM recordings WHERE filename LIKE ? OR transcript_text LIKE ? ORDER BY start_time DESC LIMIT ? OFFSET ?",
-      )
-      .all(like, like, limit, offset);
-  } else {
-    aggRow = db.prepare<[], { c: number; b: number }>("SELECT COUNT(*) AS c, COALESCE(SUM(filesize_bytes), 0) AS b FROM recordings").get();
-    rows = db
-      .prepare<[number, number], RecordingDbRow>(
-        "SELECT * FROM recordings ORDER BY start_time DESC LIMIT ? OFFSET ?",
-      )
-      .all(limit, offset);
+    conditions.push("(filename LIKE ? OR transcript_text LIKE ?)");
+    params.push(like, like);
   }
+  if (opts.category) {
+    conditions.push("category = ?");
+    params.push(opts.category);
+  }
+  if (opts.tag) {
+    conditions.push(
+      "EXISTS (SELECT 1 FROM recording_tags t WHERE t.recording_id = recordings.id AND t.tag = ?)",
+    );
+    params.push(opts.tag);
+  }
+
+  const where = conditions.join(" AND ");
+
+  const aggRow = db
+    .prepare<unknown[], { c: number; b: number }>(
+      `SELECT COUNT(*) AS c, COALESCE(SUM(filesize_bytes), 0) AS b FROM recordings WHERE ${where}`,
+    )
+    .get(...params) as { c: number; b: number } | undefined;
+
+  const rows = db
+    .prepare<unknown[], RecordingDbRow>(
+      `SELECT * FROM recordings WHERE ${where} ORDER BY start_time DESC LIMIT ? OFFSET ?`,
+    )
+    .all(...params, limit, offset);
+
+  const tagMap = loadTagsForRecordings(rows.map((r) => r.id));
+
   return {
     total: aggRow?.c ?? 0,
     totalBytes: aggRow?.b ?? 0,
-    items: rows.map(rowToRecording),
+    // Thread the same `now` we used for the snooze-aware filter clause so the
+    // per-row `effectiveInboxStatus` can't flip to/from "snoozed" between
+    // filter evaluation and row hydration.
+    items: rows.map((r) => rowToRecording(r, tagMap.get(r.id) ?? [], now)),
+    availableTags: opts.facets ? loadAllTags() : [],
+    availableCategories: opts.facets ? loadAllCategories() : [],
   };
 }
 
@@ -177,7 +260,139 @@ export function getRecordingById(id: string): RecordingRow | null {
   const row = getDb()
     .prepare<[string], RecordingDbRow>("SELECT * FROM recordings WHERE id = ?")
     .get(id);
-  return row ? rowToRecording(row) : null;
+  if (!row) return null;
+  return rowToRecording(row, loadTagsForRecording(id));
+}
+
+export interface RecordingWithRelations {
+  row: RecordingRow;
+  inboxNotes: string | null;
+  jiraLinks: JiraLink[];
+}
+
+export function getRecordingWithRelations(id: string): RecordingWithRelations | null {
+  const raw = getDb()
+    .prepare<[string], RecordingDbRow>("SELECT * FROM recordings WHERE id = ?")
+    .get(id);
+  if (!raw) return null;
+  return {
+    row: rowToRecording(raw, loadTagsForRecording(id)),
+    inboxNotes: raw.inbox_notes,
+    jiraLinks: loadJiraLinksForRecording(id),
+  };
+}
+
+// --- Inbox mutations. Each returns `true` when a row actually changed so the
+// route layer can distinguish "unknown recording" from "no-op update". These
+// mirror the inbox-mcp surface one-to-one so both writers agree on semantics. ---
+
+export function setInboxStatus(
+  id: string,
+  status: InboxStatus,
+  notes: string | null,
+): boolean {
+  const db = getDb();
+  const now = Date.now();
+  if (status === "reviewed") {
+    return (
+      db
+        .prepare(
+          "UPDATE recordings SET inbox_status = 'reviewed', reviewed_at = ?, inbox_notes = COALESCE(?, inbox_notes) WHERE id = ?",
+        )
+        .run(now, notes, id).changes > 0
+    );
+  }
+  if (status === "archived") {
+    return db.prepare("UPDATE recordings SET inbox_status = 'archived' WHERE id = ?").run(id).changes > 0;
+  }
+  // Resetting to 'new' also clears reviewed_at and snoozed_until: after a
+  // manual reopen the user expects the item to behave like an active inbox
+  // item, not to silently re-snooze on a stale timestamp from before it was
+  // reviewed/archived. The MCP's unnotifiedNew() also sees it again.
+  return (
+    db
+      .prepare(
+        "UPDATE recordings SET inbox_status = 'new', reviewed_at = NULL, snoozed_until = NULL WHERE id = ?",
+      )
+      .run(id).changes > 0
+  );
+}
+
+export function setSnoozedUntil(id: string, until: number | null): boolean {
+  const db = getDb();
+  if (until === null) {
+    return db.prepare("UPDATE recordings SET snoozed_until = NULL WHERE id = ?").run(id).changes > 0;
+  }
+  // Match inbox-mcp's snooze(): only 'new' rows can be snoozed. Reviewed or
+  // archived items must be reopened first — consistent with the MCP contract.
+  return (
+    db
+      .prepare("UPDATE recordings SET snoozed_until = ? WHERE id = ? AND inbox_status = 'new'")
+      .run(until, id).changes > 0
+  );
+}
+
+export function setCategory(id: string, category: string | null): boolean {
+  const db = getDb();
+  const trimmed = category?.trim() || null;
+  return db.prepare("UPDATE recordings SET category = ? WHERE id = ?").run(trimmed, id).changes > 0;
+}
+
+export function setInboxNotes(id: string, notes: string | null): boolean {
+  const db = getDb();
+  return db.prepare("UPDATE recordings SET inbox_notes = ? WHERE id = ?").run(notes, id).changes > 0;
+}
+
+export function addRecordingTag(id: string, tag: string): boolean {
+  const trimmed = tag.trim();
+  if (!trimmed) return false;
+  const db = getDb();
+  return (
+    db
+      .prepare("INSERT OR IGNORE INTO recording_tags (recording_id, tag) VALUES (?, ?)")
+      .run(id, trimmed).changes > 0
+  );
+}
+
+export function removeRecordingTag(id: string, tag: string): boolean {
+  const db = getDb();
+  return (
+    db
+      .prepare("DELETE FROM recording_tags WHERE recording_id = ? AND tag = ?")
+      .run(id, tag).changes > 0
+  );
+}
+
+export function addJiraLink(params: {
+  recordingId: string;
+  issueKey: string;
+  issueUrl: string | null;
+  relation: string;
+}): boolean {
+  const db = getDb();
+  return (
+    db
+      .prepare(
+        `INSERT OR IGNORE INTO recording_jira_links (recording_id, issue_key, issue_url, relation, created_at)
+         VALUES (?, ?, ?, ?, ?)`,
+      )
+      .run(
+        params.recordingId,
+        params.issueKey,
+        params.issueUrl,
+        params.relation,
+        Date.now(),
+      ).changes > 0
+  );
+}
+
+export function removeJiraLink(recordingId: string, issueKey: string): boolean {
+  const db = getDb();
+  return (
+    db
+      .prepare("DELETE FROM recording_jira_links WHERE recording_id = ? AND issue_key = ?")
+      .run(recordingId, issueKey).changes > 0
+  );
 }
 
 export function deleteRecording(id: string): void {

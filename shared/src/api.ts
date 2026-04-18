@@ -1,5 +1,10 @@
 import type { AppConfig } from "./config.js";
-import type { RecordingRow, RecordingDetail } from "./recording.js";
+import type {
+  RecordingRow,
+  RecordingDetail,
+  InboxStatus,
+  EffectiveInboxStatus,
+} from "./recording.js";
 
 export interface AuthDetectResponse {
   found: boolean;
@@ -37,21 +42,80 @@ export interface SetupStatusResponse {
   hasRecordingsDir: boolean;
 }
 
+// Filter axis for the list endpoint. "active" mirrors the inbox-mcp list_new
+// semantics (inbox_status='new' and not currently snoozed). "all" is the default
+// dashboard view that shows every recording regardless of state.
+export type RecordingsListFilter = "all" | EffectiveInboxStatus | "active";
+
 export interface RecordingsListQuery {
   limit?: number;
   offset?: number;
   search?: string;
   from?: number;
   to?: number;
+  filter?: RecordingsListFilter;
+  tag?: string;
+  category?: string;
 }
 
 export interface RecordingsListResponse {
   total: number;
   totalBytes: number;
   items: RecordingRow[];
+  availableTags: string[];
+  availableCategories: string[];
 }
 
 export interface RecordingDetailResponse {
+  recording: RecordingDetail;
+  mediaBase: string;
+  recordingsDir?: string;
+}
+
+// Inbox mutation payloads. Kept in shared so the web client and server use the
+// same contract at compile time — drift here would only be caught at runtime.
+//
+// `notes` is only valid for the `reviewed` transition (the route rejects it
+// on other statuses since `setInboxStatus` only merges notes into
+// inbox_notes during the reviewed branch). Discriminated union encodes that
+// at the type level so clients can't pass notes with `new`/`archived`.
+export type InboxStatusPatchRequest =
+  | {
+      status: "reviewed";
+      // Optional merge-only notes. Clients clear notes via
+      // InboxNotesPatchRequest (which accepts explicit null) — keeping the
+      // "clear" semantics on a single endpoint means /status rejects null.
+      notes?: string;
+    }
+  | {
+      status: Exclude<InboxStatus, "reviewed">;
+      notes?: never;
+    };
+
+export interface InboxSnoozePatchRequest {
+  // Epoch ms. Null clears the snooze (equivalent to unsnooze).
+  snoozedUntil: number | null;
+}
+
+export interface InboxCategoryPatchRequest {
+  category: string | null;
+}
+
+export interface InboxNotesPatchRequest {
+  notes: string | null;
+}
+
+export interface InboxTagRequest {
+  tag: string;
+}
+
+export interface InboxJiraLinkRequest {
+  issueKey: string;
+  issueUrl?: string | null;
+  relation?: string;
+}
+
+export interface InboxMutationResponse {
   recording: RecordingDetail;
 }
 

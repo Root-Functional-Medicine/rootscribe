@@ -17,7 +17,7 @@ export function ReviewStep({
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <span className="font-label text-primary text-xs font-bold tracking-widest uppercase">Step 5</span>
+        <span className="font-label text-primary text-xs font-bold tracking-widest uppercase">Step 6</span>
         <h1 className="text-3xl font-extrabold tracking-tight text-on-surface">Review &amp; Launch</h1>
         <p className="text-on-surface-variant text-base max-w-md leading-relaxed">
           Confirm these settings, then we'll start syncing.
@@ -37,6 +37,9 @@ export function ReviewStep({
           ) : (
             <span className="text-on-surface-variant">none</span>
           )}
+        </Row>
+        <Row label="Jira base URL">
+          <code className="font-mono text-xs text-primary">{c.jiraBaseUrl}</code>
         </Row>
         <Row label="Poll interval">every {c.pollIntervalMinutes} min</Row>
         <Row label="Listening on">

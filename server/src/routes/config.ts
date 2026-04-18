@@ -38,6 +38,23 @@ const PatchSchema = z.object({
       port: z.number().int().min(1).max(65535),
     })
     .optional(),
+  // Zod strips unknown keys by default, so fields must be listed here to be
+  // persisted. Jira base URL: require an http/https URL — `z.string().url()`
+  // alone accepts `javascript:` / `data:` etc., and this value is later used
+  // to build <a href>s via buildJiraUrl(), so non-web schemes would become an
+  // XSS / navigation vector.
+  jiraBaseUrl: z
+    .string()
+    .url()
+    .refine((value) => {
+      try {
+        const proto = new URL(value).protocol;
+        return proto === "http:" || proto === "https:";
+      } catch {
+        return false;
+      }
+    }, "jiraBaseUrl must use http or https")
+    .optional(),
 });
 
 configRouter.post("/", (req, res) => {

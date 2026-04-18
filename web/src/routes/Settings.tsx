@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { DEFAULT_CONFIG } from "@applaud/shared";
 import { api } from "../api.js";
 
 function formatRelative(ts: number | null): string {
@@ -26,8 +27,10 @@ export function Settings(): JSX.Element {
 
   const [webhookUrl, setWebhookUrl] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
+  const [jiraBaseUrl, setJiraBaseUrl] = useState("");
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export function Settings(): JSX.Element {
     const c = cfg.data.config;
     setWebhookUrl(c.webhook?.url ?? "");
     setPollMinutes(c.pollIntervalMinutes);
+    setJiraBaseUrl(c.jiraBaseUrl ?? "");
     setDirty(false);
   }, [cfg.data]);
 
@@ -44,15 +48,27 @@ export function Settings(): JSX.Element {
 
   const save = async (): Promise<void> => {
     setSaving(true);
+    setSaveError(null);
     try {
+      // Blank Jira URL field = reset to default. Previously we omitted the
+      // field, but that made the UI reset to the stored value after save and
+      // made "clear" look broken. Sending DEFAULT_CONFIG.jiraBaseUrl keeps
+      // the field in a valid state while respecting the clear gesture.
+      const trimmedJira = jiraBaseUrl.trim() || DEFAULT_CONFIG.jiraBaseUrl;
       await api.updateConfig({
         webhook: webhookUrl.trim()
           ? { url: webhookUrl.trim(), enabled: true }
           : null,
         pollIntervalMinutes: pollMinutes,
+        jiraBaseUrl: trimmedJira,
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);
+    } catch (err) {
+      // Surface server validation errors (e.g. bad Jira URL) inline — without
+      // this, the promise rejection would vanish and the user would see no
+      // feedback about why Save didn't work.
+      setSaveError(err instanceof Error ? err.message : "Failed to save settings.");
     } finally {
       setSaving(false);
     }
@@ -177,6 +193,9 @@ export function Settings(): JSX.Element {
                 setWebhookUrl(e.target.value);
                 setDirty(true);
                 setTestResult(null);
+                // Clear any prior save error so it doesn't linger after the
+                // user starts correcting the value that caused it.
+                setSaveError(null);
               }}
             />
             <button
@@ -247,6 +266,7 @@ export function Settings(): JSX.Element {
             onChange={(e) => {
               setPollMinutes(Number(e.target.value));
               setDirty(true);
+              setSaveError(null);
             }}
             className="w-full accent-primary"
           />
@@ -255,6 +275,46 @@ export function Settings(): JSX.Element {
             <span>30 mins</span>
             <span>60 mins</span>
           </div>
+        </div>
+      </section>
+
+      {/* Jira Integration */}
+      <section className="card p-8 space-y-6">
+        <div className="flex items-center gap-3">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
+          </svg>
+          <div>
+            <h2 className="text-xl font-bold text-on-surface">Jira Integration</h2>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Paste just an issue key (e.g. <span className="font-mono">DEVX-96</span>) and we'll
+              build the link from this base URL.
+            </p>
+          </div>
+        </div>
+        <div className="space-y-2">
+          <label className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider">
+            Base URL
+          </label>
+          <div className="relative">
+            <input
+              className="input py-3 border-transparent font-mono text-sm"
+              type="url"
+              placeholder={DEFAULT_CONFIG.jiraBaseUrl}
+              value={jiraBaseUrl}
+              onChange={(e) => {
+                setJiraBaseUrl(e.target.value);
+                setDirty(true);
+                setSaveError(null);
+              }}
+            />
+          </div>
+          {jiraBaseUrl.trim() && (
+            <p className="text-[11px] text-on-surface-variant font-mono">
+              Preview: <span className="text-primary">{jiraBaseUrl.trim().replace(/\/+$/, "")}/DEVX-96</span>
+            </p>
+          )}
         </div>
       </section>
 
@@ -267,6 +327,9 @@ export function Settings(): JSX.Element {
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>
+        {saveError && (
+          <p className="mt-3 text-xs text-error max-w-md text-center">{saveError}</p>
+        )}
         <p className="mt-4 font-label text-[10px] text-on-surface-variant uppercase tracking-[0.15em]">
           Changes take effect immediately on local engine.
         </p>

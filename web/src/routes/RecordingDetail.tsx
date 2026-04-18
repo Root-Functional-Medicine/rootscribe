@@ -4,6 +4,12 @@ import { useRef, useEffect, useState, useCallback, useMemo } from "react";
 import Markdown from "react-markdown";
 import { api } from "../api.js";
 import { Waveform } from "../components/Waveform.js";
+import { InboxStatusPill } from "../components/InboxStatusPill.js";
+import { InboxActions } from "../components/InboxActions.js";
+import { TagEditor } from "../components/TagEditor.js";
+import { CategoryEditor } from "../components/CategoryEditor.js";
+import { JiraLinksEditor } from "../components/JiraLinksEditor.js";
+import { InboxNotesEditor } from "../components/InboxNotesEditor.js";
 
 function formatDuration(ms: number): string {
   const sec = Math.floor(ms / 1000);
@@ -224,7 +230,10 @@ export function RecordingDetailPage(): JSX.Element {
         </nav>
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
           <div>
-            <h1 className="text-4xl md:text-5xl font-black text-on-surface tracking-tight mb-2">{r.filename}</h1>
+            <div className="flex items-center gap-3 mb-2 flex-wrap">
+              <h1 className="text-4xl md:text-5xl font-black text-on-surface tracking-tight">{r.filename}</h1>
+              <InboxStatusPill status={r.effectiveInboxStatus} />
+            </div>
             <div className="flex items-center gap-4 text-on-surface-variant font-label text-sm">
               <div className="flex items-center gap-1.5">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" /></svg>
@@ -244,6 +253,12 @@ export function RecordingDetailPage(): JSX.Element {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>
             Delete Recording
           </button>
+        </div>
+
+        {/* Inbox workflow actions — primary interactions live right under the
+            header so they're the first thing the user sees on detail load. */}
+        <div className="mt-5 pt-5 border-t border-outline-variant/20">
+          <InboxActions recording={r} />
         </div>
       </div>
 
@@ -363,6 +378,48 @@ export function RecordingDetailPage(): JSX.Element {
               )}
             </>
           )}
+          {/* Inbox metadata — category, tags, jira links, notes. Single card so
+              sibling inbox actions from the header are contextually linked. */}
+          <section className="card p-6 text-sm">
+            <h2 className="mb-4 text-sm font-semibold uppercase tracking-widest text-on-surface-variant font-label">
+              Inbox
+            </h2>
+            <div className="space-y-4">
+              <div>
+                <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
+                  Category
+                </div>
+                <CategoryEditor recordingId={r.id} category={r.category} />
+              </div>
+              <div>
+                <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
+                  Tags
+                </div>
+                <TagEditor recordingId={r.id} tags={r.tags} />
+              </div>
+              <div>
+                <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
+                  Jira Issues
+                </div>
+                <JiraLinksEditor recordingId={r.id} links={r.jiraLinks} />
+              </div>
+              <div>
+                <div className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider mb-1.5">
+                  Notes
+                </div>
+                <InboxNotesEditor recordingId={r.id} notes={r.inboxNotes} />
+              </div>
+              {r.reviewedAt && (
+                <div className="pt-3 border-t border-outline-variant/30 flex items-center justify-between">
+                  <span className="text-[10px] font-label text-on-surface-variant uppercase tracking-wider">
+                    Reviewed
+                  </span>
+                  <span className="text-xs text-on-surface">{formatDate(r.reviewedAt)}</span>
+                </div>
+              )}
+            </div>
+          </section>
+
           <section className="card p-6 text-sm">
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-widest text-on-surface-variant font-label">Details</h2>
             <dl className="space-y-3">
