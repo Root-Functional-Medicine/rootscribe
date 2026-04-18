@@ -104,11 +104,15 @@ async function main(): Promise<void> {
     });
   });
 
-  // Static web bundle + SPA fallback
+  // Static web bundle + SPA fallback. In Express 5 (send@1.x) the default
+  // dotfiles: "ignore" policy rejects any absolute path whose components
+  // include a dotfile — so running the server from under `.claude/worktrees`
+  // breaks `sendFile(absolutePath)`. Using `{ root }` keeps the dotfile
+  // scan scoped to the relative portion ("index.html"), which has none.
   if (existsSync(WEB_DIST)) {
     app.use(express.static(WEB_DIST, { index: false }));
     app.get(/^(?!\/api\/|\/media\/).*/, (_req, res) => {
-      res.sendFile(path.join(WEB_DIST, "index.html"));
+      res.sendFile("index.html", { root: WEB_DIST });
     });
   } else {
     app.get("/", (_req, res) => {
