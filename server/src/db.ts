@@ -27,6 +27,21 @@ export function getDb(): Database.Database {
   return db;
 }
 
+// Closes the cached handle and clears the module-level cache so the next
+// getDb() call opens a fresh connection. Mirrors resetConfigCache() in
+// config.ts. Used by test fixtures that need to swap out state.sqlite
+// between scenarios without restarting the whole process.
+export function resetDbSingleton(): void {
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      // Already closed, or WAL checkpoint failed — not test-fatal.
+    }
+    db = null;
+  }
+}
+
 function migrate(d: Database.Database): void {
   d.exec(`
     CREATE TABLE IF NOT EXISTS recordings (

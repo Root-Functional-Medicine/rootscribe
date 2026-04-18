@@ -13,6 +13,8 @@ import { syncRouter } from "./routes/sync.js";
 import { mediaRouter } from "./routes/media.js";
 import { poller } from "./sync/poller.js";
 
+const E2E_FLAG = "ROOTSCRIBE_E2E";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -94,6 +96,15 @@ async function main(): Promise<void> {
   app.use("/api/recordings", recordingsRouter);
   app.use("/api/sync", syncRouter);
   app.use("/media", mediaRouter);
+
+  // Test-only routes for Playwright's /reset and /fast-forward-snooze. The
+  // dynamic import keeps the fixture module (which pulls in better-sqlite3
+  // for a second time + seed data) out of the production path entirely.
+  if (process.env[E2E_FLAG] === "1") {
+    const { testRouter } = await import("./routes/_test.js");
+    app.use("/api/_test", testRouter);
+    logger.warn("E2E test routes enabled — this must never happen in production");
+  }
 
   app.get("/api/setup/status", (_req, res) => {
     const current = loadConfig();
