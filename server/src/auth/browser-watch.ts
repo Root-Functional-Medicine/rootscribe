@@ -38,11 +38,28 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
   if (baseline) baselineTokens.add(baseline.token);
 
   const listeners = new Set<Listener>();
-  let done = false;
-  let lastEvent: WatchEvent | null = null;
+
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let pollTimer: NodeJS.Timeout | null = null;
+  let timeoutTimer: NodeJS.Timeout | null = null;
+
+  // Declare the watch object BEFORE emit()/stop()/poll() so those closures
+  // can mutate `watch.lastEvent` / `watch.done` directly. Previously the
+  // closures updated local `let` bindings while the watch object held a
+  // stale snapshot, so subscribeWatch's lastEvent-replay never saw any
+  // events emitted before the subscriber joined.
+  const watch: Watch = {
+    id,
+    startedAt,
+    listeners,
+    stop: () => undefined,
+    done: false,
+    lastEvent: null,
+    baselineTokens,
+  };
 
   const emit = (e: WatchEvent): void => {
-    lastEvent = e;
+    watch.lastEvent = e;
     for (const l of listeners) {
       try {
         l(e);
@@ -52,17 +69,14 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     }
   };
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
-  let pollTimer: NodeJS.Timeout | null = null;
-  let timeoutTimer: NodeJS.Timeout | null = null;
-
   const stop = (): void => {
-    if (done) return;
-    done = true;
+    if (watch.done) return;
+    watch.done = true;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (pollTimer) clearInterval(pollTimer);
     if (timeoutTimer) clearTimeout(timeoutTimer);
   };
+  watch.stop = stop;
 
   const poll = async (): Promise<void> => {
     try {
@@ -76,29 +90,20 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     }
   };
 
-  const watch: Watch = {
-    id,
-    startedAt,
-    listeners,
-    stop,
-    done,
-    lastEvent,
-    baselineTokens,
-  };
   watches.set(id, watch);
 
   // Heartbeat "waiting" events for the UI.
   heartbeatTimer = setInterval(() => {
-    if (done) return;
+    if (watch.done) return;
     emit({ type: "waiting", elapsedMs: Date.now() - startedAt });
   }, HEARTBEAT_INTERVAL_MS);
 
   pollTimer = setInterval(() => {
-    if (!done) void poll();
+    if (!watch.done) void poll();
   }, POLL_INTERVAL_MS);
 
   timeoutTimer = setTimeout(() => {
-    if (!done) {
+    if (!watch.done) {
       emit({ type: "timeout" });
       stop();
     }
@@ -128,6 +133,10 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
 
   return id;
 }
+
+// Listener type exported so SSE consumers (routes/auth) and tests can
+// reference the same shape the module emits.
+export type { Listener };
 
 export function subscribeWatch(id: string, listener: Listener): (() => void) | null {
   const w = watches.get(id);
