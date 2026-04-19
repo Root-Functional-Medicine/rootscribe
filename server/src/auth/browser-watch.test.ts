@@ -46,7 +46,15 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  // stop()/timeout schedule a 30s cleanupTimer that deletes the watch
+  // from the module-level `watches` Map. If we swap to real timers
+  // without advancing past the cleanup window, stopped watches pile up
+  // in the Map and their listener closures outlive the test. Advance
+  // fake time by 30s + 1 to flush, then drop any leftover pending timers
+  // before restoring real ones.
+  await vi.advanceTimersByTimeAsync(30_001);
+  vi.clearAllTimers();
   vi.useRealTimers();
 });
 

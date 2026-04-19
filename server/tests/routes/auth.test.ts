@@ -385,7 +385,11 @@ describe("GET /api/auth/watch/:id/events (SSE)", () => {
     for (let i = 0; i < 40 && !capturedListener; i++) {
       await new Promise((r) => setTimeout(r, 25));
     }
-    const ev: WatchEvent = { type: "waiting", elapsedSec: 5 };
+    // `elapsedMs` is the real shape the browser-watch module emits (and
+    // the SSE route forwards verbatim). A previous pass used elapsedSec,
+    // which wasn't a valid WatchEvent key — the typecheck slipped through
+    // and the test was asserting a frame shape the server never produces.
+    const ev: WatchEvent = { type: "waiting", elapsedMs: 5_000 };
     capturedListener!(ev);
 
     const raw = await readUntil(res, (acc) => acc.includes('"waiting"'));
@@ -393,7 +397,7 @@ describe("GET /api/auth/watch/:id/events (SSE)", () => {
 
     const frames = parseDataFrames(raw);
     expect(frames[0]).toEqual({ type: "subscribed" });
-    expect(frames).toContainEqual({ type: "waiting", elapsedSec: 5 });
+    expect(frames).toContainEqual({ type: "waiting", elapsedMs: 5_000 });
   });
 
   it("emits {type:'error', message:'watch id not found'} + closes when subscribeWatch returns null", async () => {
