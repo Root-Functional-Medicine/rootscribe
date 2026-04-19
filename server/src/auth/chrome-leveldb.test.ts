@@ -244,7 +244,9 @@ describe("findToken — sorting + multi-profile aggregation", () => {
     ]);
     // copyProfileToTemp generates randomized temp paths, so we can't
     // pre-seed dbStagesByPath by path. Instead, monkey-patch its `get` to
-    // pull the next unconsumed staging in call order, then restore.
+    // pull the next unconsumed staging in call order. Wrap in try/finally
+    // so a rejection inside findToken() can't leak the patched Map.get
+    // into later tests.
     const stages: StagedDb[] = [
       { getImpl: () => utf16Value(`bearer ${older}`), iterateKeys: [] },
       { getImpl: () => utf16Value(`bearer ${newer}`), iterateKeys: [] },
@@ -259,11 +261,13 @@ describe("findToken — sorting + multi-profile aggregation", () => {
       return fresh;
     };
 
-    const r = await findToken();
-    dbStagesByPath.get = originalGet;
-
-    expect(r?.token).toBe(newer);
-    expect(r?.iat).toBe(1_800_000_000);
+    try {
+      const r = await findToken();
+      expect(r?.token).toBe(newer);
+      expect(r?.iat).toBe(1_800_000_000);
+    } finally {
+      dbStagesByPath.get = originalGet;
+    }
   });
 
   it("survives a scan failure on one profile and still returns the other profile's token", async () => {
@@ -287,11 +291,13 @@ describe("findToken — sorting + multi-profile aggregation", () => {
       return fresh;
     };
 
-    const r = await findToken();
-    dbStagesByPath.get = originalGet;
-
-    expect(r?.token).toBe(token);
-    expect(r?.profile).toBe("Default");
+    try {
+      const r = await findToken();
+      expect(r?.token).toBe(token);
+      expect(r?.profile).toBe("Default");
+    } finally {
+      dbStagesByPath.get = originalGet;
+    }
   });
 });
 

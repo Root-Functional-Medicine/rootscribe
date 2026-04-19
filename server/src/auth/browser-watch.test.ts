@@ -36,9 +36,11 @@ function tokenFor(id: string, iat = 1_700_000_000): FoundToken {
 beforeEach(() => {
   vi.mocked(findToken).mockReset();
   vi.mocked(openUrl).mockReset();
-  // Fake only the timer surface we need. Keeping Date real so the
-  // startedAt / elapsedMs math continues to advance under
-  // vi.advanceTimersByTimeAsync.
+  // Fake the timer surface AND Date so the module's
+  // `Date.now() - startedAt` elapsedMs math advances in lockstep with
+  // `vi.advanceTimersByTimeAsync()`. Without faking Date, the timer
+  // callbacks would fire but elapsedMs would stay near 0 because
+  // Date.now() would still reflect wall-clock time at the test start.
   vi.useFakeTimers({
     toFake: ["setTimeout", "setInterval", "clearTimeout", "clearInterval", "Date"],
   });

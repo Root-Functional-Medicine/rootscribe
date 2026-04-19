@@ -313,24 +313,53 @@ describe("GET /api/auth/watch/:id/events (SSE)", () => {
       .map((b) => JSON.parse(b.slice("data: ".length)) as unknown);
   }
 
-  // Read SSE frames from a Response body until `predicate(raw)` is true or
-  // a 2-second deadline is hit. Returns the accumulated raw chunks.
+  // Read SSE frames from a Response body until `predicate(raw)` is true.
+  // Throws on deadline hit or premature stream end so a slow CI runner
+  // fails with a clear "timed out waiting for X" message instead of a
+  // confusing "missing frame" assertion further down.
   async function readUntil(
     res: Response,
     predicate: (acc: string) => boolean,
   ): Promise<string> {
+    const timeoutMs = 2000;
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let raw = "";
-    const deadline = Date.now() + 2000;
-    while (Date.now() < deadline) {
-      const { value, done } = await reader.read();
-      if (value) raw += decoder.decode(value);
-      if (done) break;
-      if (predicate(raw)) break;
+    const deadline = Date.now() + timeoutMs;
+    try {
+      while (true) {
+        if (predicate(raw)) return raw;
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+          throw new Error(
+            `readUntil: timed out after ${timeoutMs}ms. Received: ${JSON.stringify(raw)}`,
+          );
+        }
+        const read = await Promise.race([
+          reader.read(),
+          new Promise<{ value: Uint8Array | undefined; done: boolean }>(
+            (_, reject) => {
+              setTimeout(() => {
+                reject(
+                  new Error(
+                    `readUntil: timed out after ${timeoutMs}ms. Received: ${JSON.stringify(raw)}`,
+                  ),
+                );
+              }, remainingMs);
+            },
+          ),
+        ]);
+        if (read.value) raw += decoder.decode(read.value, { stream: true });
+        if (predicate(raw)) return raw;
+        if (read.done) {
+          throw new Error(
+            `readUntil: stream ended before predicate matched. Received: ${JSON.stringify(raw)}`,
+          );
+        }
+      }
+    } finally {
+      await reader.cancel().catch(() => undefined);
     }
-    await reader.cancel().catch(() => undefined);
-    return raw;
   }
 
   it("emits {type:'subscribed'} immediately and forwards subsequent events from subscribeWatch", async () => {

@@ -42,6 +42,7 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
   let heartbeatTimer: NodeJS.Timeout | null = null;
   let pollTimer: NodeJS.Timeout | null = null;
   let timeoutTimer: NodeJS.Timeout | null = null;
+  let cleanupTimer: NodeJS.Timeout | null = null;
 
   // Declare the watch object BEFORE emit()/stop()/poll() so those closures
   // can mutate `watch.lastEvent` / `watch.done` directly. Previously the
@@ -75,6 +76,15 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (pollTimer) clearInterval(pollTimer);
     if (timeoutTimer) clearTimeout(timeoutTimer);
+    // Schedule cleanup 30s from NOW (not TIMEOUT_MS + 30s from start) so a
+    // watch that stops early — e.g., user logs in at second 10 — doesn't
+    // hold a phantom entry in the `watches` map for the full 5.5 minutes.
+    // Also tracked via `cleanupTimer` so a re-stop can't double-schedule.
+    if (!cleanupTimer) {
+      cleanupTimer = setTimeout(() => {
+        watches.delete(id);
+      }, 30_000);
+    }
   };
   watch.stop = stop;
 
@@ -123,13 +133,10 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
   // Fire an immediate poll so we don't wait the full interval.
   void poll();
 
-  // Schedule cleanup 30 s after finish so late subscribers can still fetch the last event.
-  setTimeout(
-    () => {
-      watches.delete(id);
-    },
-    TIMEOUT_MS + 30_000,
-  );
+  // Cleanup is scheduled lazily inside stop() — 30s after the watch
+  // actually finishes, so late subscribers can still fetch the last
+  // event without phantom entries accumulating when users start/stop
+  // watches repeatedly.
 
   return id;
 }
