@@ -211,7 +211,10 @@ describe("WebhookStep — save + navigation", () => {
       };
       expect(body.webhook).toBeNull();
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    // saveAndContinue() is async and invoked via `void saveAndContinue()` —
+    // the POST fires before onNext, so asserting onNext right after the
+    // POST waitFor races with api.updateConfig resolving. Wait explicitly.
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("clicking Next (non-empty URL) POSTs the trimmed URL with enabled=true and calls onNext", async () => {
@@ -242,7 +245,46 @@ describe("WebhookStep — save + navigation", () => {
         enabled: true,
       });
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+  });
+
+  it("whitespace-only URL input renders the 'Skip' button and POSTs webhook=null on click", async () => {
+    // Covers the regression Copilot flagged: prior to the production fix,
+    // WebhookStep rendered "Next" for whitespace-only input but still POSTed
+    // webhook=null on click. Label + click behavior must stay aligned.
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    routeWebhookFetch(stub);
+    renderWithProviders(
+      <WebhookStep onNext={onNext} onBack={vi.fn()} />,
+    );
+
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "   ",
+    );
+    // Label reflects the trimmed value, not the raw one.
+    expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
+    // And the Test Connection button stays hidden.
+    expect(
+      screen.queryByRole("button", { name: /test connection/i }),
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^skip$/i }));
+
+    await waitFor(() => {
+      const post = stub.fetch.mock.calls.find(
+        ([i, init]) =>
+          String(i) === "/api/config" &&
+          (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String((post?.[1] as RequestInit).body)) as {
+        webhook: unknown;
+      };
+      expect(body.webhook).toBeNull();
+    });
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("clicking Back calls onBack", async () => {

@@ -178,7 +178,10 @@ describe("JiraStep — save + navigation", () => {
       // Leading/trailing whitespace is trimmed on save.
       expect(body.jiraBaseUrl).toBe("https://myco.atlassian.net/browse/");
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    // saveAndContinue() is async and invoked via `void saveAndContinue()` —
+    // the POST fires before onNext, so asserting onNext right after the
+    // POST waitFor races with api.updateConfig resolving. Wait explicitly.
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("blank URL falls back to DEFAULT_CONFIG.jiraBaseUrl on save", async () => {
@@ -203,7 +206,7 @@ describe("JiraStep — save + navigation", () => {
       };
       expect(body.jiraBaseUrl).toBe(DEFAULT_CONFIG.jiraBaseUrl);
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("surfaces the server error inline and does not navigate when save fails", async () => {

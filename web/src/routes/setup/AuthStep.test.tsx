@@ -223,7 +223,10 @@ describe("AuthStep — accept detected session", () => {
       expect(body.token).toBe("bearer-abc");
       expect(body.email).toBe("alice@example.com");
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    // accept() is async and fired via `void accept(...)` — the POST fires
+    // before onNext, so asserting onNext right after the POST waitFor
+    // races with api.authAccept resolving. Wait explicitly.
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("flips to the error state when accept returns ok=false", async () => {
@@ -341,7 +344,9 @@ describe("AuthStep — manual token paste", () => {
       };
       expect(body.token).toBe(longToken);
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    // submitManual() is async and fired via `void submitManual()` — same
+    // race as the detect-accept flow: wait on onNext explicitly.
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("surfaces the error inline when manual accept returns ok=false", async () => {

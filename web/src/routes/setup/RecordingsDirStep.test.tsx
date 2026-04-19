@@ -173,7 +173,10 @@ describe("RecordingsDirStep — save + navigation", () => {
       };
       expect(body.recordingsDir).toBe("/absolute/expanded/recordings");
     });
-    expect(onNext).toHaveBeenCalledTimes(1);
+    // save() is async and invoked via `void save()` — the POST fires before
+    // onNext, so asserting onNext right after the POST waitFor races with
+    // the api.updateConfig promise resolving. Wait for onNext explicitly.
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
   it("clicking Back calls onBack", async () => {
