@@ -1,56 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { InboxMutationResponse, RecordingDetail } from "@rootscribe/shared";
 import { InboxNotesEditor } from "./InboxNotesEditor.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
-
-// Minimal RecordingDetail shape to satisfy InboxMutationResponse — the
-// component only reads a few fields off the response via applyRecordingMutation,
-// but the response type still expects the full object. Keep this local to
-// the components that need it.
-function mutationResponse(
-  overrides: Partial<RecordingDetail> = {},
-): InboxMutationResponse {
-  return {
-    recording: {
-      id: "rec-1",
-      filename: "f.ogg",
-      startTime: 0,
-      endTime: 0,
-      durationMs: 0,
-      filesizeBytes: 0,
-      serialNumber: "",
-      folder: "",
-      audioPath: null,
-      transcriptPath: null,
-      summaryPath: null,
-      metadataPath: null,
-      audioDownloadedAt: null,
-      transcriptDownloadedAt: null,
-      webhookAudioFiredAt: null,
-      webhookTranscriptFiredAt: null,
-      isTrash: false,
-      isHistorical: false,
-      lastError: null,
-      status: "complete",
-      inboxStatus: "new",
-      effectiveInboxStatus: "new",
-      category: null,
-      snoozedUntil: null,
-      reviewedAt: null,
-      tags: [],
-      transcriptText: null,
-      summaryMarkdown: null,
-      metadata: null,
-      inboxNotes: null,
-      jiraLinks: [],
-      ...overrides,
-    } as RecordingDetail,
-    availableTags: [],
-    availableCategories: [],
-  };
-}
+import {
+  jsonResponse,
+  makeInboxMutationResponse as mutationResponse,
+  renderWithProviders,
+  stubFetch,
+} from "../test-utils.js";
 
 describe("InboxNotesEditor", () => {
   let stub: ReturnType<typeof stubFetch>;

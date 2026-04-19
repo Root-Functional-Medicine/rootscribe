@@ -1,52 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { InboxMutationResponse, RecordingDetail } from "@rootscribe/shared";
 import { CategoryEditor } from "./CategoryEditor.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
-
-function mutationResponse(
-  overrides: Partial<RecordingDetail> = {},
-): InboxMutationResponse {
-  return {
-    recording: {
-      id: "rec-1",
-      filename: "f.ogg",
-      startTime: 0,
-      endTime: 0,
-      durationMs: 0,
-      filesizeBytes: 0,
-      serialNumber: "",
-      folder: "",
-      audioPath: null,
-      transcriptPath: null,
-      summaryPath: null,
-      metadataPath: null,
-      audioDownloadedAt: null,
-      transcriptDownloadedAt: null,
-      webhookAudioFiredAt: null,
-      webhookTranscriptFiredAt: null,
-      isTrash: false,
-      isHistorical: false,
-      lastError: null,
-      status: "complete",
-      inboxStatus: "new",
-      effectiveInboxStatus: "new",
-      category: null,
-      snoozedUntil: null,
-      reviewedAt: null,
-      tags: [],
-      transcriptText: null,
-      summaryMarkdown: null,
-      metadata: null,
-      inboxNotes: null,
-      jiraLinks: [],
-      ...overrides,
-    } as RecordingDetail,
-    availableTags: [],
-    availableCategories: [],
-  };
-}
+import {
+  jsonResponse,
+  makeInboxMutationResponse as mutationResponse,
+  renderWithProviders,
+  stubFetch,
+} from "../test-utils.js";
 
 describe("CategoryEditor — display mode", () => {
   let stub: ReturnType<typeof stubFetch>;

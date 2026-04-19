@@ -2,6 +2,7 @@ import { useState, type ReactElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, type MemoryRouterProps } from "react-router-dom";
 import { render, type RenderOptions, type RenderResult } from "@testing-library/react";
+import type { InboxMutationResponse, RecordingDetail } from "@rootscribe/shared";
 import { ThemeContext, type Theme } from "./hooks/useTheme.js";
 
 // A Testing Library render wrapper that stitches together the three providers
@@ -138,4 +139,61 @@ export function jsonResponse(
     status: init.status ?? 200,
     headers: { "content-type": init.contentType ?? "application/json" },
   });
+}
+
+// Minimal RecordingDetail with every required field set to a safe default.
+// Component tests that stub a mutation response usually only care about a
+// handful of fields (tags, category, inboxNotes, jiraLinks), but the shared
+// InboxMutationResponse type still demands the full shape. Centralizing the
+// defaults here means shape changes to RecordingDetail only need one update.
+export function makeRecordingDetail(
+  overrides: Partial<RecordingDetail> = {},
+): RecordingDetail {
+  return {
+    id: "rec-1",
+    filename: "f.ogg",
+    startTime: 0,
+    endTime: 0,
+    durationMs: 0,
+    filesizeBytes: 0,
+    serialNumber: "",
+    folder: "",
+    audioPath: null,
+    transcriptPath: null,
+    summaryPath: null,
+    metadataPath: null,
+    audioDownloadedAt: null,
+    transcriptDownloadedAt: null,
+    webhookAudioFiredAt: null,
+    webhookTranscriptFiredAt: null,
+    isTrash: false,
+    isHistorical: false,
+    lastError: null,
+    status: "complete",
+    inboxStatus: "new",
+    effectiveInboxStatus: "new",
+    category: null,
+    snoozedUntil: null,
+    reviewedAt: null,
+    tags: [],
+    transcriptText: null,
+    summaryMarkdown: null,
+    metadata: null,
+    inboxNotes: null,
+    jiraLinks: [],
+    ...overrides,
+  };
+}
+
+/** Build an InboxMutationResponse with safe defaults — `overrides` applies to the recording. */
+export function makeInboxMutationResponse(
+  overrides: Partial<RecordingDetail> = {},
+  extras: Partial<Omit<InboxMutationResponse, "recording">> = {},
+): InboxMutationResponse {
+  return {
+    recording: makeRecordingDetail(overrides),
+    availableTags: [],
+    availableCategories: [],
+    ...extras,
+  };
 }
