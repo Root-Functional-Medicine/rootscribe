@@ -35,16 +35,21 @@ describe("AppShell — layout and navigation", () => {
 
   beforeEach(() => {
     stub = stubFetch();
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: null,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: false,
-      }),
+    // SyncStatusBadge (mounted by AppShell) refetches every 10s, so we need
+    // a fresh Response per call — Response bodies are single-use, so the
+    // second .json() read off a reused instance would throw.
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: null,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
     );
     vi.stubGlobal("EventSource", FakeEventSource);
     localStorage.clear();
@@ -91,16 +96,21 @@ describe("AppShell — GitHub star nudge", () => {
 
   beforeEach(() => {
     stub = stubFetch();
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: null,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: false,
-      }),
+    // SyncStatusBadge (mounted by AppShell) refetches every 10s, so we need
+    // a fresh Response per call — Response bodies are single-use, so the
+    // second .json() read off a reused instance would throw.
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: null,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
     );
     vi.stubGlobal("EventSource", FakeEventSource);
     localStorage.clear();

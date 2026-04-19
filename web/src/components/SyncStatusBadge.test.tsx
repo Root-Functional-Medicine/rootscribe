@@ -62,64 +62,75 @@ describe("SyncStatusBadge", () => {
   });
 
   it("surfaces 'auth required' when status.authRequired is true", async () => {
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: null,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: true,
-      }),
+    // Use mockImplementation so each refetch (10s interval + SSE invalidation)
+    // gets a FRESH Response. Response bodies are single-use — reusing one
+    // mockResolvedValue instance causes the second .json() read to throw.
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: null,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: true,
+        }),
+      ),
     );
     renderWithProviders(<SyncStatusBadge />);
     expect(await screen.findByText(/auth required/i)).toBeInTheDocument();
   });
 
   it("renders the 'syncing' badge when polling=true", async () => {
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: null,
-        nextPollAt: null,
-        polling: true,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: false,
-      }),
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: null,
+          nextPollAt: null,
+          polling: true,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
     );
     renderWithProviders(<SyncStatusBadge />);
     expect(await screen.findByText(/syncing/i)).toBeInTheDocument();
   });
 
   it("renders the 'error' badge when lastError is set and not currently polling", async () => {
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: 100,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 1,
-        lastError: "boom",
-        authRequired: false,
-      }),
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: 100,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 1,
+          lastError: "boom",
+          authRequired: false,
+        }),
+      ),
     );
     renderWithProviders(<SyncStatusBadge />);
     expect(await screen.findByText(/^error$/i)).toBeInTheDocument();
   });
 
   it("renders the 'synced …' badge with a relative timestamp on a clean status", async () => {
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: Date.now() - 5_000,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: false,
-      }),
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: Date.now() - 5_000,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
     );
     renderWithProviders(<SyncStatusBadge />);
     // "5s ago" / "just now" / etc. — we just assert the "synced" prefix to
@@ -128,16 +139,18 @@ describe("SyncStatusBadge", () => {
   });
 
   it("opens an EventSource to /api/sync/events on mount and closes it on unmount", async () => {
-    stub.fetch.mockResolvedValue(
-      jsonResponse({
-        lastPollAt: 100,
-        nextPollAt: null,
-        polling: false,
-        pendingTranscripts: 0,
-        errorsLast24h: 0,
-        lastError: null,
-        authRequired: false,
-      }),
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: 100,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
     );
     const { unmount } = renderWithProviders(<SyncStatusBadge />);
 
