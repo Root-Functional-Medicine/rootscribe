@@ -288,17 +288,20 @@ describe("RecordingDetailPage — audio player", () => {
       .mockReturnValue(undefined as unknown as Promise<void>);
     const pauseSpy = vi.spyOn(audio, "pause").mockReturnValue(undefined);
     // happy-dom: audio.paused defaults to true, so first click → play.
-    // Play button is identified by the triangular polygon shape ("▶").
-    const playBtn = screen.getAllByRole("button").find((b) =>
-      // eslint-disable-next-line testing-library/no-node-access
-      b.querySelector("polygon")?.getAttribute("points") === "6 3 20 12 6 21 6 3",
-    ) as HTMLButtonElement;
-    await user.click(playBtn);
+    // Find via accessible name — the production button carries both title
+    // and aria-label that flip "Play" → "Pause" based on isPlaying state.
+    await user.click(screen.getByRole("button", { name: /^play$/i }));
     expect(playSpy).toHaveBeenCalledTimes(1);
 
-    // Flip to playing, click again → pause.
+    // Flip to playing. Production wires audio.addEventListener("play", …) to
+    // setIsPlaying(true); dispatching the event here triggers that listener
+    // so the button's accessible name flips to "Pause" on re-render.
     Object.defineProperty(audio, "paused", { value: false, configurable: true });
-    await user.click(playBtn);
+    const { act } = await import("@testing-library/react");
+    await act(async () => {
+      audio.dispatchEvent(new Event("play"));
+    });
+    await user.click(await screen.findByRole("button", { name: /^pause$/i }));
     expect(pauseSpy).toHaveBeenCalledTimes(1);
   });
 
@@ -540,7 +543,13 @@ describe("RecordingDetailPage — details + metadata section", () => {
   beforeEach(() => {
     stub = stubFetch();
   });
-  afterEach(() => stub.cleanup());
+  afterEach(() => {
+    stub.cleanup();
+    // One test in this block spies on Date.prototype.toLocaleString; restore
+    // it here so the mocked return value doesn't bleed into tests that run
+    // later in the same Vitest worker.
+    vi.restoreAllMocks();
+  });
 
   it("renders the id, device, folder, and a COMPLETE badge when audio + transcript are both downloaded", async () => {
     routeDetailFetch(stub, {

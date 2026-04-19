@@ -270,7 +270,12 @@ export function RecordingDetailPage(): JSX.Element {
             <section className="card p-6 overflow-hidden">
               <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-3">
-                  <button onClick={togglePlay} className="w-12 h-12 flex items-center justify-center bg-primary rounded-xl text-on-primary shadow-lg shadow-primary/20 active:scale-90 transition-transform">
+                  <button
+                    onClick={togglePlay}
+                    title={isPlaying ? "Pause" : "Play"}
+                    aria-label={isPlaying ? "Pause" : "Play"}
+                    className="w-12 h-12 flex items-center justify-center bg-primary rounded-xl text-on-primary shadow-lg shadow-primary/20 active:scale-90 transition-transform"
+                  >
                     {isPlaying ? (
                       <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16" rx="1" /><rect x="14" y="4" width="4" height="16" rx="1" /></svg>
                     ) : (
