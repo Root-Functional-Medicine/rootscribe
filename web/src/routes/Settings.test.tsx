@@ -304,7 +304,9 @@ describe("Settings — save button", () => {
 
   it("POSTs updated config with trimmed webhook URL, trimmed jira URL, and current poll minutes", async () => {
     const user = userEvent.setup();
-    routeSettingsFetch(stub, { config: makeConfig({ webhook: null }) });
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: null, jiraBaseUrl: "" }),
+    });
     renderWithProviders(<Settings />);
     const webhookInput = await screen.findByPlaceholderText(
       /api\.yourdomain\.com/i,
@@ -312,31 +314,77 @@ describe("Settings — save button", () => {
     // Deliberate surrounding whitespace — Settings trims on save to keep the
     // server from seeing "  https://hook  " values.
     await user.type(webhookInput, "  https://hook.example  ");
+
+    // Also edit the Jira URL with trailing whitespace so the trim path on
+    // jiraBaseUrl is exercised in this assertion (Copilot called out that
+    // without an edit here we were only verifying the DEFAULT fallback).
+    const jiraInput = screen.getByPlaceholderText(DEFAULT_CONFIG.jiraBaseUrl);
+    await user.type(jiraInput, "  https://myco.atlassian.net/browse/  ");
+
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
-      const postCall = stub.fetch.mock.calls.find(
-        ([i, init]) =>
-          String(i) === "/api/config" &&
-          (init as RequestInit | undefined)?.method === "POST",
-      );
-      expect(postCall).toBeDefined();
-      const body = JSON.parse(
-        String((postCall?.[1] as RequestInit).body),
-      ) as {
-        webhook: { url: string; enabled: boolean };
-        pollIntervalMinutes: number;
-        jiraBaseUrl: string;
-      };
-      expect(body.webhook).toEqual({
-        url: "https://hook.example",
-        enabled: true,
-      });
-      expect(body.pollIntervalMinutes).toBe(10);
-      // Blank Jira URL → default (preserves the "clear" gesture without
-      // leaving the stored value dangling).
-      expect(body.jiraBaseUrl).toBe(DEFAULT_CONFIG.jiraBaseUrl);
+      expect(
+        stub.fetch.mock.calls.some(
+          ([i, init]) =>
+            String(i) === "/api/config" &&
+            (init as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true);
     });
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === "/api/config" &&
+        (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse(
+      String((postCall?.[1] as RequestInit).body),
+    ) as {
+      webhook: { url: string; enabled: boolean };
+      pollIntervalMinutes: number;
+      jiraBaseUrl: string;
+    };
+    expect(body.webhook).toEqual({
+      url: "https://hook.example",
+      enabled: true,
+    });
+    expect(body.pollIntervalMinutes).toBe(10);
+    // Trimmed Jira URL made it to the wire.
+    expect(body.jiraBaseUrl).toBe("https://myco.atlassian.net/browse/");
+  });
+
+  it("falls back to DEFAULT_CONFIG.jiraBaseUrl when the Jira field is left blank", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: null, jiraBaseUrl: "" }),
+    });
+    renderWithProviders(<Settings />);
+    const webhookInput = await screen.findByPlaceholderText(
+      /api\.yourdomain\.com/i,
+    );
+    await user.type(webhookInput, "https://hook.example");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      expect(
+        stub.fetch.mock.calls.some(
+          ([i, init]) =>
+            String(i) === "/api/config" &&
+            (init as RequestInit | undefined)?.method === "POST",
+        ),
+      ).toBe(true);
+    });
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === "/api/config" &&
+        (init as RequestInit | undefined)?.method === "POST",
+    );
+    const body = JSON.parse(
+      String((postCall?.[1] as RequestInit).body),
+    ) as { jiraBaseUrl: string };
+    // Blank Jira URL → default (preserves the "clear" gesture without
+    // leaving the stored value dangling).
+    expect(body.jiraBaseUrl).toBe(DEFAULT_CONFIG.jiraBaseUrl);
   });
 
   it("sends webhook=null when the webhook URL is cleared to empty", async () => {

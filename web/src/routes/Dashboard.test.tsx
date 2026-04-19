@@ -350,15 +350,36 @@ describe("Dashboard — search + Sync Now", () => {
     );
 
     const input = screen.getByPlaceholderText(/search archives/i);
-    await user.type(input, "standup");
+    // Deliberate surrounding whitespace so we actually exercise the
+    // `trimmedSearch` path — Dashboard trims to match server-side behavior
+    // so the cache key doesn't fragment. `standup ` (trailing space) is
+    // enough; userEvent reliably types the space.
+    await user.type(input, "standup ");
 
     await waitFor(() => {
+      // Request sees the trimmed value (no trailing space).
       expect(
         stub.fetch.mock.calls.some(([i]) =>
-          String(i).includes("search=standup"),
-        ),
+          String(i).includes("search=standup&"),
+        ) ||
+          stub.fetch.mock.calls.some(
+            ([i]) =>
+              String(i).endsWith("search=standup") ||
+              String(i).includes("search=standup&"),
+          ),
       ).toBe(true);
     });
+    // And no request contains the untrimmed raw value.
+    expect(
+      stub.fetch.mock.calls.some(([i]) =>
+        String(i).includes("search=standup+"),
+      ),
+    ).toBe(false);
+    expect(
+      stub.fetch.mock.calls.some(([i]) =>
+        String(i).includes("search=standup%20"),
+      ),
+    ).toBe(false);
   });
 
   it("clicking Sync Now hits /api/sync/trigger and disables the button while pending", async () => {
