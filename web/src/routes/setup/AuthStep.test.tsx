@@ -282,11 +282,25 @@ describe("AuthStep — manual token paste", () => {
     vi.unstubAllGlobals();
   });
 
+  // The manual-token UI lives inside a collapsed <details>. In a real
+  // browser the textarea + button are hidden until the summary is
+  // expanded, so every test in this block first clicks the summary to
+  // mirror the real user flow. happy-dom happens to expose these nodes
+  // even while collapsed, which would let a broken UI slip through
+  // without this explicit expansion.
+  async function openManualTokenSection(
+    user: ReturnType<typeof userEvent.setup>,
+  ): Promise<void> {
+    const summary = await screen.findByText(/paste a token manually/i);
+    await user.click(summary);
+  }
+
   it("'Use this token' is disabled until the pasted token is at least 20 chars", async () => {
     const user = userEvent.setup();
     routeAuthFetch(stub, { detect: { found: false } });
     renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
     await screen.findByText(/no existing plaud session found/i);
+    await openManualTokenSection(user);
 
     const textarea = screen.getByPlaceholderText(/bearer eyJ/i);
     // Short string → disabled.
@@ -308,6 +322,7 @@ describe("AuthStep — manual token paste", () => {
     routeAuthFetch(stub, { detect: { found: false }, accept: "ok" });
     renderWithProviders(<AuthStep onNext={onNext} onBack={vi.fn()} />);
     await screen.findByText(/no existing plaud session found/i);
+    await openManualTokenSection(user);
 
     const textarea = screen.getByPlaceholderText(/bearer eyJ/i);
     const longToken = "bearer eyJ0000000000000000000000";
@@ -338,6 +353,7 @@ describe("AuthStep — manual token paste", () => {
     });
     renderWithProviders(<AuthStep onNext={onNext} onBack={vi.fn()} />);
     await screen.findByText(/no existing plaud session found/i);
+    await openManualTokenSection(user);
 
     await user.type(
       screen.getByPlaceholderText(/bearer eyJ/i),

@@ -51,10 +51,11 @@ export default defineConfig({
       // three auth flows (detect/accept, watch via EventSource, manual
       // token paste); SetupWizard walks the full 6-step wizard end-to-end
       // and asserts navigation to "/" after complete-setup. Thresholds
-      // sit ~0.5% below the achieved numbers. Subsequent DEVX-102 PRs
-      // continue bumping each axis toward 95% — remaining 0% clusters are
-      // server infrastructure (poller/webhook/auth detection) and
-      // inbox-mcp.
+      // sit about 0.6–1.1 points below the achieved numbers (branches
+      // has the widest gap at ~1.1; the others cluster around 0.6–1.0).
+      // Subsequent DEVX-102 PRs continue bumping each axis toward 95% —
+      // remaining 0% clusters are server infrastructure
+      // (poller/webhook/auth detection) and inbox-mcp.
       thresholds: {
         lines: 71,
         functions: 79,

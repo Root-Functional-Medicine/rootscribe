@@ -211,7 +211,11 @@ describe("SetupWizard — finish flow", () => {
     await user.click(screen.getByRole("button", { name: /start/i }));
     await screen.findByText(/connect your plaud account/i);
     // Skip Auth manually by submitting a dummy token; detect returns
-    // "notfound", textarea accepts > 20 chars, accept returns ok.
+    // "notfound", then we expand the "Paste a token manually" <details>
+    // (hidden by default in a real browser) before typing + submitting.
+    await user.click(
+      await screen.findByText(/paste a token manually/i),
+    );
     const tokenInput = await screen.findByPlaceholderText(/bearer eyJ/i);
     await user.type(
       tokenInput,
