@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -19,6 +20,43 @@ function makeProps(overrides: Partial<React.ComponentProps<typeof InboxFilters>>
     availableCategories: [],
     ...overrides,
   };
+}
+
+// Stateful wrapper that mirrors how a real parent (e.g. RecordingsList) holds
+// the tag/category state. Without this, the component would stay at tag=""
+// across keystrokes and we couldn't verify that onChange receives the full
+// cumulative string — we'd only see per-keystroke deltas, which would mask a
+// regression where the component only propagates the last character.
+interface StatefulInputsProps {
+  initialTag?: string;
+  initialCategory?: string;
+  onTagChange?: (tag: string) => void;
+  onCategoryChange?: (category: string) => void;
+}
+function StatefulInputs({
+  initialTag = "",
+  initialCategory = "",
+  onTagChange,
+  onCategoryChange,
+}: StatefulInputsProps): React.ReactElement {
+  const [tag, setTag] = useState(initialTag);
+  const [category, setCategory] = useState(initialCategory);
+  return (
+    <InboxFilters
+      {...makeProps({
+        tag,
+        category,
+        onTagChange: (next) => {
+          setTag(next);
+          onTagChange?.(next);
+        },
+        onCategoryChange: (next) => {
+          setCategory(next);
+          onCategoryChange?.(next);
+        },
+      })}
+    />
+  );
 }
 
 describe("InboxFilters — filter tabs", () => {
@@ -68,29 +106,32 @@ describe("InboxFilters — filter tabs", () => {
 });
 
 describe("InboxFilters — tag + category inputs", () => {
-  it("fires onTagChange for each character typed into the tag input", async () => {
+  it("propagates the cumulative tag value to onTagChange as the user types", async () => {
     const onTagChange = vi.fn();
     const user = userEvent.setup();
-    render(<InboxFilters {...makeProps({ onTagChange })} />);
+    // StatefulInputs mirrors the real parent's useState — onTagChange should
+    // see "f" then "fu" (cumulative), not just "f" then "u" (per-keystroke
+    // deltas). This catches a regression where the component only propagates
+    // the last character.
+    render(<StatefulInputs onTagChange={onTagChange} />);
 
     // Inputs are implicitly labeled by their wrapping <label> containing
     // a <span>Tag</span> — Testing Library picks that up.
-    // Since the component is controlled and tag stays "" through the parent
-    // (our mock doesn't update state), each keystroke's onChange fires with
-    // just that keystroke's character, not the cumulative string — we're
-    // asserting the wire-up, not the parent's controlled-input contract.
     await user.type(screen.getByLabelText(/tag/i), "fu");
     expect(onTagChange).toHaveBeenNthCalledWith(1, "f");
-    expect(onTagChange).toHaveBeenNthCalledWith(2, "u");
+    expect(onTagChange).toHaveBeenNthCalledWith(2, "fu");
+    expect(onTagChange).toHaveBeenLastCalledWith("fu");
   });
 
-  it("fires onCategoryChange for typing in the category input", async () => {
+  it("propagates the cumulative category value to onCategoryChange as the user types", async () => {
     const onCategoryChange = vi.fn();
     const user = userEvent.setup();
-    render(<InboxFilters {...makeProps({ onCategoryChange })} />);
+    render(<StatefulInputs onCategoryChange={onCategoryChange} />);
 
-    await user.type(screen.getByLabelText(/category/i), "b");
-    expect(onCategoryChange).toHaveBeenCalledWith("b");
+    await user.type(screen.getByLabelText(/category/i), "bi");
+    expect(onCategoryChange).toHaveBeenNthCalledWith(1, "b");
+    expect(onCategoryChange).toHaveBeenNthCalledWith(2, "bi");
+    expect(onCategoryChange).toHaveBeenLastCalledWith("bi");
   });
 
   it("shows a 'clear' button next to the tag input only when tag is non-empty", () => {
