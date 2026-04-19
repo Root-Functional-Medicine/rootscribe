@@ -52,11 +52,13 @@ export default defineConfig({
       // watch (mocked findToken + open + fake timers), sync/poller (all
       // dependencies mocked for pagination + error classification + retry
       // flows), and platform-branch coverage of inbox-mcp/paths.
-      // 90 new tests; functions cleared 89%, lines + statements cleared
-      // 86%. Thresholds sit ~0.5 points below the achieved numbers.
-      // DEVX-102 target (95% every axis) is now within one more ratchet —
-      // remaining coverage gaps are the "hard to hit" db error branches
-      // (schema check, file-read fallbacks).
+      // 90 new tests; functions cleared 89%, lines cleared 88%, and
+      // statements cleared 86%. Thresholds remain below achieved coverage,
+      // with the largest headroom on branches and functions (~1.3–1.4
+      // points) and the tightest on lines (~0.5 points). DEVX-102 target
+      // (95% every axis) is now within one more ratchet — remaining
+      // coverage gaps are the "hard to hit" db error branches (schema
+      // check, file-read fallbacks).
       thresholds: {
         lines: 88,
         functions: 88,
