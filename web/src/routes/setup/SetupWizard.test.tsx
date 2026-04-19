@@ -44,11 +44,19 @@ function routeWizardFetch(
     >
   > = {},
 ): void {
+  // Sort override keys longest-first so more-specific paths win over their
+  // prefixes — `/api/config` is a substring of `/api/config/complete-setup`
+  // etc., and without this ordering a plain "/api/config" override would
+  // accidentally catch every /api/config/* request and mask failures.
+  const sortedOverrides = Object.entries(overrides).sort(
+    ([a], [b]) => b.length - a.length,
+  );
+
   stub.fetch.mockImplementation((input, init) => {
     const url = typeof input === "string" ? input : String(input);
     const method = (init?.method ?? "GET").toUpperCase();
 
-    for (const [path, body] of Object.entries(overrides)) {
+    for (const [path, body] of sortedOverrides) {
       if (url.includes(path)) {
         return Promise.resolve(jsonResponse(body));
       }
