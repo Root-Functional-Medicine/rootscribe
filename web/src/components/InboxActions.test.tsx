@@ -1,66 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type {
-  InboxMutationResponse,
-  RecordingDetail,
-  EffectiveInboxStatus,
-} from "@rootscribe/shared";
+import type { RecordingDetail, EffectiveInboxStatus } from "@rootscribe/shared";
 import { InboxActions } from "./InboxActions.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import {
+  jsonResponse,
+  makeInboxMutationResponse as mutationResponse,
+  makeRecordingDetail,
+  renderWithProviders,
+  stubFetch,
+} from "../test-utils.js";
 
+// Compose on top of the shared makeRecordingDetail helper — only the
+// status-specific fields vary per test. Keeping just the status-derivation
+// logic here means RecordingDetail shape changes land in test-utils.tsx.
 function makeRecording(
   effectiveInboxStatus: EffectiveInboxStatus,
   overrides: Partial<RecordingDetail> = {},
 ): RecordingDetail {
-  return {
-    id: "rec-1",
-    filename: "f.ogg",
-    startTime: 0,
-    endTime: 0,
-    durationMs: 0,
-    filesizeBytes: 0,
-    serialNumber: "",
-    folder: "",
-    audioPath: null,
-    transcriptPath: null,
-    summaryPath: null,
-    metadataPath: null,
-    audioDownloadedAt: null,
-    transcriptDownloadedAt: null,
-    webhookAudioFiredAt: null,
-    webhookTranscriptFiredAt: null,
-    isTrash: false,
-    isHistorical: false,
-    lastError: null,
-    status: "complete",
+  return makeRecordingDetail({
     inboxStatus:
       effectiveInboxStatus === "snoozed" ? "new" : effectiveInboxStatus,
     effectiveInboxStatus,
-    category: null,
-    snoozedUntil: effectiveInboxStatus === "snoozed" ? Date.now() + 86_400_000 : null,
+    snoozedUntil:
+      effectiveInboxStatus === "snoozed" ? Date.now() + 86_400_000 : null,
     reviewedAt: effectiveInboxStatus === "reviewed" ? Date.now() : null,
-    tags: [],
-    transcriptText: null,
-    summaryMarkdown: null,
-    metadata: null,
-    inboxNotes: null,
-    jiraLinks: [],
     ...overrides,
-  };
-}
-
-function mutationResponse(
-  overrides: Partial<RecordingDetail> = {},
-): InboxMutationResponse {
-  return {
-    recording: {
-      ...makeRecording("new"),
-      ...overrides,
-    },
-    availableTags: [],
-    availableCategories: [],
-  };
+  });
 }
 
 describe("InboxActions — button surface per effective status", () => {

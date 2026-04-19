@@ -51,9 +51,10 @@ export default defineConfig({
       // CategoryEditor/TagEditor/InboxFilters/JiraLinksEditor/SnoozeMenu/
       // InboxActions/AppShell/Waveform. Every mutation test hits the real
       // jsonFetch → fetch pipeline via a stubbed global.fetch — no
-      // mock-heavy internals. Thresholds sit ~0.5% below the achieved
-      // numbers. Subsequent DEVX-102 PRs continue bumping each axis toward
-      // 95%.
+      // mock-heavy internals. Thresholds sit ~0.5–1% below the achieved
+      // numbers (functions has the widest gap at ~1%; the others cluster
+      // at ~0.5%). Subsequent DEVX-102 PRs continue bumping each axis
+      // toward 95%.
       thresholds: {
         lines: 52,
         functions: 53,
