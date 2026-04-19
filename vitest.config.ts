@@ -43,23 +43,23 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #3):
-      // 52.67% lines, 41.47% branches, 54.02% functions, 50.40% statements.
-      // Ratchet #3 added a web provider harness (test-utils.tsx —
-      // QueryClient + Router + Theme) and tests for every untested component
-      // + useTheme: useTheme/ThemeToggle/SyncStatusBadge/InboxNotesEditor/
-      // CategoryEditor/TagEditor/InboxFilters/JiraLinksEditor/SnoozeMenu/
-      // InboxActions/AppShell/Waveform. Every mutation test hits the real
-      // jsonFetch → fetch pipeline via a stubbed global.fetch — no
-      // mock-heavy internals. Thresholds sit ~0.5–1% below the achieved
-      // numbers (functions has the widest gap at ~1%; the others cluster
-      // at ~0.5%). Subsequent DEVX-102 PRs continue bumping each axis
-      // toward 95%.
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #4):
+      // 65.13% lines, 57.33% branches, 70.11% functions, 63.39% statements.
+      // Ratchet #4 covered the three major web routes (Dashboard,
+      // RecordingDetail, Settings). Every test hits the real
+      // jsonFetch → fetch pipeline via a stubbed global.fetch; no
+      // mock-heavy internals. RecordingDetail exercises the transcript
+      // parser, Ctrl+F search, audio play/pause/skip refs, summary modal,
+      // delete-confirm flow, and every sidebar editor; Dashboard covers
+      // URL-synced filter deep-linking + sync-trigger lifecycle; Settings
+      // covers config form + webhook test + server-validation errors.
+      // Thresholds sit ~0.5% below the achieved numbers. Subsequent
+      // DEVX-102 PRs continue bumping each axis toward 95%.
       thresholds: {
-        lines: 52,
-        functions: 53,
-        branches: 41,
-        statements: 50,
+        lines: 64,
+        functions: 69,
+        branches: 56,
+        statements: 62,
       },
     },
   },
