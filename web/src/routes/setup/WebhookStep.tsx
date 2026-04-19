@@ -18,11 +18,16 @@ export function WebhookStep({
   }>(null);
 
   const test = async (): Promise<void> => {
-    if (!url) return;
+    // Trim to match the Test Connection button gate (which uses url.trim())
+    // and saveAndContinue(). Without this, a URL with surrounding whitespace
+    // would hit the button gate but fail server-side Zod validation with a
+    // confusing "invalid URL" for what looks like a valid URL in the input.
+    const trimmed = url.trim();
+    if (!trimmed) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api.testWebhook(url);
+      const r = await api.testWebhook(trimmed);
       setTestResult(r);
     } catch (err) {
       setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -80,7 +85,7 @@ export function WebhookStep({
         </div>
       </div>
 
-      {url && (
+      {url.trim() && (
         <button className="btn-primary px-6 py-3" onClick={() => void test()} disabled={testing}>
           {testing ? "Testing…" : "Test Connection"}
         </button>
@@ -114,7 +119,7 @@ export function WebhookStep({
           Back
         </button>
         <button className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10" onClick={() => void saveAndContinue()}>
-          {url ? "Next" : "Skip"}
+          {url.trim() ? "Next" : "Skip"}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5l7 7-7 7" /></svg>
         </button>
       </div>
