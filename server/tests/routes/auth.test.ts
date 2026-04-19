@@ -335,20 +335,28 @@ describe("GET /api/auth/watch/:id/events (SSE)", () => {
             `readUntil: timed out after ${timeoutMs}ms. Received: ${JSON.stringify(raw)}`,
           );
         }
-        const read = await Promise.race([
-          reader.read(),
-          new Promise<{ value: Uint8Array | undefined; done: boolean }>(
-            (_, reject) => {
-              setTimeout(() => {
-                reject(
-                  new Error(
-                    `readUntil: timed out after ${timeoutMs}ms. Received: ${JSON.stringify(raw)}`,
-                  ),
-                );
-              }, remainingMs);
-            },
-          ),
-        ]);
+        // Capture the timeout handle so we can clear it in `.finally()`
+        // on whichever promise wins the race — otherwise the setTimeout
+        // stays pending for up to `remainingMs` after the reader resolves,
+        // keeping Node's event loop alive and slowing teardown.
+        let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+        const timeoutPromise = new Promise<{
+          value: Uint8Array | undefined;
+          done: boolean;
+        }>((_, reject) => {
+          timeoutHandle = setTimeout(() => {
+            reject(
+              new Error(
+                `readUntil: timed out after ${timeoutMs}ms. Received: ${JSON.stringify(raw)}`,
+              ),
+            );
+          }, remainingMs);
+        });
+        const read = await Promise.race([reader.read(), timeoutPromise]).finally(
+          () => {
+            if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
+          },
+        );
         if (read.value) raw += decoder.decode(read.value, { stream: true });
         if (predicate(raw)) return raw;
         if (read.done) {

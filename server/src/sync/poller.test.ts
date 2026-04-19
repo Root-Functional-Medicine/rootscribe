@@ -223,7 +223,7 @@ describe("poller.start / stop / status", () => {
     });
   });
 
-  it("start() no-ops when setup isn't complete (no token/recordingsDir)", async () => {
+  it("start() skips polling when token is missing (pollAndProcess no-ops early)", async () => {
     setConfig({ token: null });
     vi.mocked(listRecordings).mockResolvedValue(plaudPage([]));
 
