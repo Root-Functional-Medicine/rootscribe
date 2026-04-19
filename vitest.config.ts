@@ -43,24 +43,25 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #5):
-      // 71.60% lines, 66.06% branches, 79.88% functions, 70.00% statements.
-      // Ratchet #5 covered the setup wizard: WelcomeStep / AuthStep /
-      // RecordingsDirStep / WebhookStep / JiraStep / ReviewStep +
-      // SetupWizard orchestrator (60 new tests). AuthStep exercises all
-      // three auth flows (detect/accept, watch via EventSource, manual
-      // token paste); SetupWizard walks the full 6-step wizard end-to-end
-      // and asserts navigation to "/" after complete-setup. Thresholds
-      // sit about 0.6–1.1 points below the achieved numbers (branches
-      // has the widest gap at ~1.1; the others cluster around 0.6–1.0).
-      // Subsequent DEVX-102 PRs continue bumping each axis toward 95% —
-      // remaining 0% clusters are server infrastructure
-      // (poller/webhook/auth detection) and inbox-mcp.
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #6):
+      // 88.54% lines, 77.39% branches, 89.27% functions, 86.60% statements.
+      // Ratchet #6 covered every remaining 0%-covered server-infra file
+      // plus the inbox-mcp platform branches: webhook/post (retry +
+      // backoff), routes/auth (supertest + SSE via real HTTP server),
+      // auth/chrome-leveldb (mocked classic-level + fs), auth/browser-
+      // watch (mocked findToken + open + fake timers), sync/poller (all
+      // dependencies mocked for pagination + error classification + retry
+      // flows), and platform-branch coverage of inbox-mcp/paths.
+      // 90 new tests; functions cleared 89%, lines + statements cleared
+      // 86%. Thresholds sit ~0.5 points below the achieved numbers.
+      // DEVX-102 target (95% every axis) is now within one more ratchet —
+      // remaining coverage gaps are the "hard to hit" db error branches
+      // (schema check, file-read fallbacks).
       thresholds: {
-        lines: 71,
-        functions: 79,
-        branches: 65,
-        statements: 69,
+        lines: 88,
+        functions: 88,
+        branches: 76,
+        statements: 86,
       },
     },
   },
