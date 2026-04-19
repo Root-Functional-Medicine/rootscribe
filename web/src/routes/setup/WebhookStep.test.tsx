@@ -105,6 +105,37 @@ describe("WebhookStep — test connection", () => {
     expect(screen.getByText(/HTTP 202 OK — accepted/i)).toBeInTheDocument();
   });
 
+  it("Test Connection POSTs the TRIMMED URL (not the raw value with whitespace)", async () => {
+    // Regression: test() previously sent the raw `url` while the button
+    // visibility and save path both used `url.trim()`. The mismatch meant
+    // a URL with surrounding whitespace would fail the server-side Zod
+    // `z.string().url()` validation with a confusing "invalid URL" even
+    // though the input looked fine and the button was clickable.
+    const user = userEvent.setup();
+    routeWebhookFetch(stub);
+    renderWithProviders(
+      <WebhookStep onNext={vi.fn()} onBack={vi.fn()} />,
+    );
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "  https://hook.example  ",
+    );
+    await user.click(
+      screen.getByRole("button", { name: /test connection/i }),
+    );
+
+    await waitFor(() => {
+      const post = stub.fetch.mock.calls.find(([i]) =>
+        String(i).includes("/api/config/test-webhook"),
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String((post?.[1] as RequestInit).body)) as {
+        url: string;
+      };
+      expect(body.url).toBe("https://hook.example");
+    });
+  });
+
   it("renders 'Connection Failed' with the HTTP status when the test returns ok=false with a status code", async () => {
     const user = userEvent.setup();
     routeWebhookFetch(stub, {

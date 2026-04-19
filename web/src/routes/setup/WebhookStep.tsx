@@ -18,11 +18,16 @@ export function WebhookStep({
   }>(null);
 
   const test = async (): Promise<void> => {
-    if (!url) return;
+    // Trim to match the Test Connection button gate (which uses url.trim())
+    // and saveAndContinue(). Without this, a URL with surrounding whitespace
+    // would hit the button gate but fail server-side Zod validation with a
+    // confusing "invalid URL" for what looks like a valid URL in the input.
+    const trimmed = url.trim();
+    if (!trimmed) return;
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api.testWebhook(url);
+      const r = await api.testWebhook(trimmed);
       setTestResult(r);
     } catch (err) {
       setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
