@@ -43,23 +43,23 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #4):
-      // 65.13% lines, 57.33% branches, 70.11% functions, 63.39% statements.
-      // Ratchet #4 covered the three major web routes (Dashboard,
-      // RecordingDetail, Settings). Every test hits the real
-      // jsonFetch → fetch pipeline via a stubbed global.fetch; no
-      // mock-heavy internals. RecordingDetail exercises the transcript
-      // parser, Ctrl+F search, audio play/pause/skip refs, summary modal,
-      // delete-confirm flow, and every sidebar editor; Dashboard covers
-      // URL-synced filter deep-linking + sync-trigger lifecycle; Settings
-      // covers config form + webhook test + server-validation errors.
-      // Thresholds sit ~0.5% below the achieved numbers. Subsequent
-      // DEVX-102 PRs continue bumping each axis toward 95%.
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #5):
+      // 71.60% lines, 66.06% branches, 79.88% functions, 70.00% statements.
+      // Ratchet #5 covered the setup wizard: WelcomeStep / AuthStep /
+      // RecordingsDirStep / WebhookStep / JiraStep / ReviewStep +
+      // SetupWizard orchestrator (60 new tests). AuthStep exercises all
+      // three auth flows (detect/accept, watch via EventSource, manual
+      // token paste); SetupWizard walks the full 6-step wizard end-to-end
+      // and asserts navigation to "/" after complete-setup. Thresholds
+      // sit ~0.5% below the achieved numbers. Subsequent DEVX-102 PRs
+      // continue bumping each axis toward 95% — remaining 0% clusters are
+      // server infrastructure (poller/webhook/auth detection) and
+      // inbox-mcp.
       thresholds: {
-        lines: 64,
-        functions: 69,
-        branches: 56,
-        statements: 62,
+        lines: 71,
+        functions: 79,
+        branches: 65,
+        statements: 69,
       },
     },
   },
