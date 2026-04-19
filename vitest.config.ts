@@ -43,21 +43,23 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #2):
-      // 38.56% lines, 29.44% branches, 31.60% functions, 36.72% statements.
-      // Ratchet #2 added unit tests for the server routes cluster
-      // (routes/sync, routes/media, sync/state, routes/recordings) — all 11
-      // recordings endpoints with full validation and inbox-workflow
-      // coverage, plus the state module's DB CRUD helpers tested against a
-      // real seeded SQLite fixture. Thresholds sit ~0.5% below the achieved
-      // numbers so drops from untested additions fail CI without false-
-      // alarming on minor coverage noise. Subsequent DEVX-102 PRs will
-      // continue bumping each axis toward 95%.
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #3):
+      // 52.67% lines, 41.47% branches, 54.02% functions, 50.40% statements.
+      // Ratchet #3 added a web provider harness (test-utils.tsx —
+      // QueryClient + Router + Theme) and tests for every untested component
+      // + useTheme: useTheme/ThemeToggle/SyncStatusBadge/InboxNotesEditor/
+      // CategoryEditor/TagEditor/InboxFilters/JiraLinksEditor/SnoozeMenu/
+      // InboxActions/AppShell/Waveform. Every mutation test hits the real
+      // jsonFetch → fetch pipeline via a stubbed global.fetch — no
+      // mock-heavy internals. Thresholds sit ~0.5–1% below the achieved
+      // numbers (functions has the widest gap at ~1%; the others cluster
+      // at ~0.5%). Subsequent DEVX-102 PRs continue bumping each axis
+      // toward 95%.
       thresholds: {
-        lines: 38,
-        functions: 31,
-        branches: 29,
-        statements: 36,
+        lines: 52,
+        functions: 53,
+        branches: 41,
+        statements: 50,
       },
     },
   },
