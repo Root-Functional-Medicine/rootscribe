@@ -400,6 +400,20 @@ describe("AuthStep — background watch via EventSource", () => {
     expect(
       await screen.findByText(/waiting for you to log in…/i),
     ).toBeInTheDocument();
+
+    // Dispatch a terminal event so AuthStep tears down the 1s setInterval
+    // ticker + closes the stream before the test ends. Without this the
+    // interval runs for the rest of the suite (leaking a worker handle and
+    // risking flaky assertions in later tests that share the same stubGlobal
+    // EventSource).
+    await act(async () => {
+      lastEventSource!.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "timeout" }),
+        }),
+      );
+    });
+    expect(lastEventSource!.close).toHaveBeenCalled();
   });
 
   it("receiving type=found closes the stream and calls onNext", async () => {
