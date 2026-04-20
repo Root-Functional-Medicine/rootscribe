@@ -9,38 +9,39 @@ import type {
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { Settings } from "./Settings.js";
 import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import {
+  appConfigFactory,
+  syncStatusResponseFactory,
+} from "../test-factories/index.js";
 
 // Settings composes two queries (config + sync-status, the latter on a 5s
 // interval) and three actions (webhook test, config save, implicit refetch
 // via cache invalidation). Every test hits the real jsonFetch → fetch
 // pipeline through a stubbed global.fetch.
 
+// Settings is always shown post-setup, so the factory's `.setupComplete()`
+// trait captures the right starting state. Token expiry is ~90 days out —
+// enough that the "Expires in" copy doesn't flicker during test runs.
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    token: "tok",
-    tokenExp: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
-    tokenEmail: "alice@example.com",
-    recordingsDir: "/tmp/rec",
-    pollIntervalMinutes: 10,
-    setupComplete: true,
-    ...overrides,
-  };
+  return appConfigFactory
+    .setupComplete()
+    .build({
+      tokenExp: Math.floor(Date.now() / 1000) + 90 * 24 * 3600,
+      ...overrides,
+    });
 }
 
+// Normal, healthy sync state — last poll 30s ago, nothing pending, no errors.
+// Per-test overrides (polling, authRequired, lastError) go through factory
+// traits at call sites.
 function syncStatus(
   overrides: Partial<SyncStatusResponse> = {},
 ): SyncStatusResponse {
-  return {
+  return syncStatusResponseFactory.build({
     lastPollAt: Date.now() - 30_000,
     nextPollAt: Date.now() + 30_000,
-    polling: false,
-    pendingTranscripts: 0,
-    errorsLast24h: 0,
-    lastError: null,
-    authRequired: false,
     ...overrides,
-  };
+  });
 }
 
 // Route all three endpoints this page touches. fetch → config/syncStatus/

@@ -1,13 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { TagEditor } from "./TagEditor.js";
+import type { RecordingDetail } from "@rootscribe/shared";
 import {
-  jsonResponse,
-  makeInboxMutationResponse as mutationResponse,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+  inboxMutationResponseFactory,
+  recordingDetailFactory,
+} from "@rootscribe/shared/test-factories";
+import { TagEditor } from "./TagEditor.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+
+// Shorthand for "mutation response whose recording has these field overrides".
+// Every test in this file stubs the PATCH response with a mutated recording
+// — the common spelling is "overrides → mutation response", not "build a
+// recording separately, then wrap it".
+function mutationResponse(overrides: Partial<RecordingDetail> = {}) {
+  return inboxMutationResponseFactory
+    .withRecording(recordingDetailFactory.build(overrides))
+    .build();
+}
 
 describe("TagEditor — rendering", () => {
   let stub: ReturnType<typeof stubFetch>;

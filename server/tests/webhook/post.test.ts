@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { RecordingRow } from "@rootscribe/shared";
+import { recordingRowFactory } from "@rootscribe/shared/test-factories";
 import { cleanupTempDir, mkTempConfigDir } from "../helpers/test-server.js";
 
 // Capture the caller's ROOTSCRIBE_CONFIG_DIR so afterAll can restore it.
@@ -33,8 +34,12 @@ afterAll(() => {
   else process.env.ROOTSCRIBE_CONFIG_DIR = originalConfigDir;
 });
 
+// Webhook-post scenarios all operate on rows where audio has already landed
+// (audioDownloadedAt != null, audioPath set) — that's the precondition for
+// fireWebhookForRecording to even run. The factory's base default is
+// `complete` with nulls; we override the audio fields per-suite.
 function makeRow(overrides: Partial<RecordingRow> = {}): RecordingRow {
-  return {
+  return recordingRowFactory.build({
     id: "rec-abc",
     filename: "standup.ogg",
     startTime: 1_700_000_000_000,
@@ -44,25 +49,9 @@ function makeRow(overrides: Partial<RecordingRow> = {}): RecordingRow {
     serialNumber: "SN1",
     folder: "2026-04-11_standup__abc",
     audioPath: "audio.ogg",
-    transcriptPath: null,
-    summaryPath: null,
-    metadataPath: null,
     audioDownloadedAt: Date.now(),
-    transcriptDownloadedAt: null,
-    webhookAudioFiredAt: null,
-    webhookTranscriptFiredAt: null,
-    isTrash: false,
-    isHistorical: false,
-    lastError: null,
-    status: "complete",
-    inboxStatus: "new",
-    effectiveInboxStatus: "new",
-    category: null,
-    snoozedUntil: null,
-    reviewedAt: null,
-    tags: [],
     ...overrides,
-  };
+  });
 }
 
 function countWebhookLogRows(): number {

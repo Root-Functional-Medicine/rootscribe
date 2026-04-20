@@ -6,13 +6,29 @@ import { baseTestConfig } from "../vitest.shared.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const sharedSrc = path.resolve(here, "..", "shared", "src", "index.ts");
+const sharedTestFactories = path.resolve(
+  here,
+  "..",
+  "shared",
+  "src",
+  "test-factories",
+  "index.ts",
+);
 
 export default defineProject({
   plugins: [react()],
   resolve: {
-    alias: {
-      "@rootscribe/shared": sharedSrc,
-    },
+    // Array form (not object) so the more specific subpath alias is tried
+    // before the bare-package alias — otherwise the `@rootscribe/shared`
+    // prefix swallows `@rootscribe/shared/test-factories` and Vite can't
+    // find the file.
+    alias: [
+      {
+        find: "@rootscribe/shared/test-factories",
+        replacement: sharedTestFactories,
+      },
+      { find: "@rootscribe/shared", replacement: sharedSrc },
+    ],
   },
   test: {
     ...baseTestConfig("web"),

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaudRawRecording } from "@rootscribe/shared";
+import { plaudRawRecordingFactory } from "@rootscribe/shared/test-factories";
 import { cleanupTempDir, mkTempConfigDir } from "../helpers/test-server.js";
 
 // Freeze Date.now() to a stable moment WITHIN the seed fixture's window
@@ -72,8 +73,14 @@ beforeEach(() => {
   seedInitialState(configDir);
 });
 
-function rawRecording(overrides: Partial<PlaudRawRecording> = {}): PlaudRawRecording {
-  return {
+// Defaults here reflect a FRESH upstream recording (no transcript/summary yet),
+// not the factory's "fully-processed" default — state.test.ts is about the
+// transition from pending → processed, so it needs `is_trans/is_summary: false`
+// as the starting point.
+function rawRecording(
+  overrides: Partial<PlaudRawRecording> = {},
+): PlaudRawRecording {
+  return plaudRawRecordingFactory.withoutTranscript().build({
     id: "rec-fresh-01",
     filename: "fresh recording",
     fullname: "2026-04-20 fresh recording.ogg",
@@ -81,16 +88,11 @@ function rawRecording(overrides: Partial<PlaudRawRecording> = {}): PlaudRawRecor
     file_md5: "abc",
     start_time: Date.UTC(2026, 3, 20, 12, 0, 0),
     end_time: Date.UTC(2026, 3, 20, 12, 1, 0),
-    duration: 60,
-    version: 1,
     version_ms: Date.UTC(2026, 3, 20, 12, 0, 0),
     edit_time: Date.UTC(2026, 3, 20, 12, 1, 0),
-    is_trash: false,
-    is_trans: false,
-    is_summary: false,
     serial_number: "SN-FRESH",
     ...overrides,
-  };
+  });
 }
 
 describe("upsertFromPlaud", () => {

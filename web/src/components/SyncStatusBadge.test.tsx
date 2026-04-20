@@ -6,6 +6,7 @@ import {
   renderWithProviders,
   stubFetch,
 } from "../test-utils.js";
+import { syncStatusResponseFactory } from "../test-factories/index.js";
 
 // Minimal EventSource stub — happy-dom doesn't ship a functional one, and we
 // don't want to actually connect to /api/sync/events from a unit test. The
@@ -67,15 +68,7 @@ describe("SyncStatusBadge", () => {
     // mockResolvedValue instance causes the second .json() read to throw.
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: null,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: true,
-        }),
+        jsonResponse(syncStatusResponseFactory.authRequired().build()),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -85,15 +78,7 @@ describe("SyncStatusBadge", () => {
   it("renders the 'syncing' badge when polling=true", async () => {
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: null,
-          nextPollAt: null,
-          polling: true,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: false,
-        }),
+        jsonResponse(syncStatusResponseFactory.polling().build()),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -103,15 +88,13 @@ describe("SyncStatusBadge", () => {
   it("renders the 'error' badge when lastError is set and not currently polling", async () => {
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: 100,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 1,
-          lastError: "boom",
-          authRequired: false,
-        }),
+        jsonResponse(
+          syncStatusResponseFactory
+            .withLastPoll(100)
+            .withError("boom")
+            .withErrorsLast24h(1)
+            .build(),
+        ),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -121,15 +104,9 @@ describe("SyncStatusBadge", () => {
   it("renders the 'synced …' badge with a relative timestamp on a clean status", async () => {
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: Date.now() - 5_000,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: false,
-        }),
+        jsonResponse(
+          syncStatusResponseFactory.withLastPoll(Date.now() - 5_000).build(),
+        ),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -150,15 +127,11 @@ describe("SyncStatusBadge", () => {
       // the 'just now' branch (< 10s).
       stub.fetch.mockImplementation(() =>
         Promise.resolve(
-          jsonResponse({
-            lastPollAt: Date.now() - secs * 1000,
-            nextPollAt: null,
-            polling: false,
-            pendingTranscripts: 0,
-            errorsLast24h: 0,
-            lastError: null,
-            authRequired: false,
-          }),
+          jsonResponse(
+            syncStatusResponseFactory
+              .withLastPoll(Date.now() - secs * 1000)
+              .build(),
+          ),
         ),
       );
       renderWithProviders(<SyncStatusBadge />);
@@ -171,15 +144,7 @@ describe("SyncStatusBadge", () => {
     // previous tests only exercised the onerror / mount / unmount paths of.
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: 100,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: false,
-        }),
+        jsonResponse(syncStatusResponseFactory.withLastPoll(100).build()),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -199,15 +164,7 @@ describe("SyncStatusBadge", () => {
     // out (e.g. server restart) rather than React tearing the component down.
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: 100,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: false,
-        }),
+        jsonResponse(syncStatusResponseFactory.withLastPoll(100).build()),
       ),
     );
     renderWithProviders(<SyncStatusBadge />);
@@ -220,15 +177,7 @@ describe("SyncStatusBadge", () => {
   it("opens an EventSource to /api/sync/events on mount and closes it on unmount", async () => {
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
-        jsonResponse({
-          lastPollAt: 100,
-          nextPollAt: null,
-          polling: false,
-          pendingTranscripts: 0,
-          errorsLast24h: 0,
-          lastError: null,
-          authRequired: false,
-        }),
+        jsonResponse(syncStatusResponseFactory.withLastPoll(100).build()),
       ),
     );
     const { unmount } = renderWithProviders(<SyncStatusBadge />);

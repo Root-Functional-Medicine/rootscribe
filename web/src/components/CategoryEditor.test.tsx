@@ -1,13 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { CategoryEditor } from "./CategoryEditor.js";
+import type { RecordingDetail } from "@rootscribe/shared";
 import {
-  jsonResponse,
-  makeInboxMutationResponse as mutationResponse,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+  inboxMutationResponseFactory,
+  recordingDetailFactory,
+} from "@rootscribe/shared/test-factories";
+import { CategoryEditor } from "./CategoryEditor.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+
+// Shorthand: "mutation response whose recording has these field overrides".
+function mutationResponse(overrides: Partial<RecordingDetail> = {}) {
+  return inboxMutationResponseFactory
+    .withRecording(recordingDetailFactory.build(overrides))
+    .build();
+}
 
 describe("CategoryEditor — display mode", () => {
   let stub: ReturnType<typeof stubFetch>;

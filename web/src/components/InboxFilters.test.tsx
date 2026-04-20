@@ -2,25 +2,11 @@ import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { RecordingsListFilter } from "@rootscribe/shared";
 import { InboxFilters } from "./InboxFilters.js";
+import { inboxFiltersPropsFactory } from "../test-factories/index.js";
 
 // InboxFilters is a controlled presentational component — no queries, no
 // mutations, no router. Plain React render is enough; no providers needed.
-
-function makeProps(overrides: Partial<React.ComponentProps<typeof InboxFilters>> = {}) {
-  return {
-    filter: "all" as RecordingsListFilter,
-    onFilterChange: vi.fn(),
-    category: "",
-    onCategoryChange: vi.fn(),
-    tag: "",
-    onTagChange: vi.fn(),
-    availableTags: [],
-    availableCategories: [],
-    ...overrides,
-  };
-}
 
 // Stateful wrapper that mirrors how a real parent (e.g. RecordingsList) holds
 // the tag/category state. Without this, the component would stay at tag=""
@@ -43,7 +29,7 @@ function StatefulInputs({
   const [category, setCategory] = useState(initialCategory);
   return (
     <InboxFilters
-      {...makeProps({
+      {...inboxFiltersPropsFactory.build({
         tag,
         category,
         onTagChange: (next) => {
@@ -61,14 +47,14 @@ function StatefulInputs({
 
 describe("InboxFilters — filter tabs", () => {
   it("renders all five status-filter buttons with their labels", () => {
-    render(<InboxFilters {...makeProps()} />);
+    render(<InboxFilters {...inboxFiltersPropsFactory.build()} />);
     for (const label of ["All", "Active", "Reviewed", "Snoozed", "Archived"]) {
       expect(screen.getByRole("button", { name: label })).toBeInTheDocument();
     }
   });
 
   it("marks the active tab with aria-pressed=true and inactive tabs with aria-pressed=false", () => {
-    render(<InboxFilters {...makeProps({ filter: "reviewed" })} />);
+    render(<InboxFilters {...inboxFiltersPropsFactory.build({ filter: "reviewed" })} />);
     expect(screen.getByRole("button", { name: "Reviewed" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -80,13 +66,13 @@ describe("InboxFilters — filter tabs", () => {
   });
 
   it("highlights the Active tab for both filter='active' and filter='new' (deep-link alias)", () => {
-    const { rerender } = render(<InboxFilters {...makeProps({ filter: "active" })} />);
+    const { rerender } = render(<InboxFilters {...inboxFiltersPropsFactory.build({ filter: "active" })} />);
     expect(screen.getByRole("button", { name: "Active" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
 
-    rerender(<InboxFilters {...makeProps({ filter: "new" })} />);
+    rerender(<InboxFilters {...inboxFiltersPropsFactory.build({ filter: "new" })} />);
     expect(screen.getByRole("button", { name: "Active" })).toHaveAttribute(
       "aria-pressed",
       "true",
@@ -97,7 +83,7 @@ describe("InboxFilters — filter tabs", () => {
     const onFilterChange = vi.fn();
     const user = userEvent.setup();
     render(
-      <InboxFilters {...makeProps({ filter: "all", onFilterChange })} />,
+      <InboxFilters {...inboxFiltersPropsFactory.build({ filter: "all", onFilterChange })} />,
     );
 
     await user.click(screen.getByRole("button", { name: "Snoozed" }));
@@ -135,17 +121,17 @@ describe("InboxFilters — tag + category inputs", () => {
   });
 
   it("shows a 'clear' button next to the tag input only when tag is non-empty", () => {
-    const { rerender } = render(<InboxFilters {...makeProps({ tag: "" })} />);
+    const { rerender } = render(<InboxFilters {...inboxFiltersPropsFactory.build({ tag: "" })} />);
     expect(screen.queryByText("clear")).not.toBeInTheDocument();
 
-    rerender(<InboxFilters {...makeProps({ tag: "urgent" })} />);
+    rerender(<InboxFilters {...inboxFiltersPropsFactory.build({ tag: "urgent" })} />);
     expect(screen.getByText("clear")).toBeInTheDocument();
   });
 
   it("clicking the tag clear button emits onTagChange('')", async () => {
     const onTagChange = vi.fn();
     const user = userEvent.setup();
-    render(<InboxFilters {...makeProps({ tag: "urgent", onTagChange })} />);
+    render(<InboxFilters {...inboxFiltersPropsFactory.build({ tag: "urgent", onTagChange })} />);
     // Category is empty so there's exactly one clear button.
     await user.click(screen.getByText("clear"));
     expect(onTagChange).toHaveBeenCalledWith("");
@@ -154,7 +140,7 @@ describe("InboxFilters — tag + category inputs", () => {
   it("renders availableTags and availableCategories into their respective datalists", () => {
     const { container } = render(
       <InboxFilters
-        {...makeProps({
+        {...inboxFiltersPropsFactory.build({
           availableTags: ["t1", "t2"],
           availableCategories: ["c1"],
         })}

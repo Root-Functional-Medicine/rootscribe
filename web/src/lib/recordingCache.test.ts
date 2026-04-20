@@ -1,43 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { RecordingDetail } from "@rootscribe/shared";
+import { recordingDetailFactory } from "@rootscribe/shared/test-factories";
 import { applyRecordingMutation } from "./recordingCache.js";
 
-function makeRecording(overrides: Partial<RecordingDetail> = {}): RecordingDetail {
-  return {
-    id: "rec-1",
+// Local wrapper preserves the filename/folder/filesize defaults this suite
+// uses as sentinel values; overrides flow through to the shared factory.
+function makeRecording(
+  overrides: Partial<RecordingDetail> = {},
+): RecordingDetail {
+  return recordingDetailFactory.build({
     filename: "meeting.ogg",
-    startTime: 0,
     endTime: 60_000,
     durationMs: 60_000,
     filesizeBytes: 12_345,
     serialNumber: "SN-1",
     folder: "2026/04/11/meeting",
-    audioPath: null,
-    transcriptPath: null,
-    summaryPath: null,
-    metadataPath: null,
-    audioDownloadedAt: null,
-    transcriptDownloadedAt: null,
-    webhookAudioFiredAt: null,
-    webhookTranscriptFiredAt: null,
-    isTrash: false,
-    isHistorical: false,
-    lastError: null,
-    status: "complete",
-    inboxStatus: "new",
-    effectiveInboxStatus: "new",
-    category: null,
-    snoozedUntil: null,
-    reviewedAt: null,
-    tags: [],
-    transcriptText: null,
-    summaryMarkdown: null,
-    metadata: null,
-    inboxNotes: null,
-    jiraLinks: [],
     ...overrides,
-  } as RecordingDetail;
+  });
 }
 
 describe("applyRecordingMutation", () => {

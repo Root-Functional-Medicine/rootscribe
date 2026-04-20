@@ -1,32 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { RecordingDetail, EffectiveInboxStatus } from "@rootscribe/shared";
-import { InboxActions } from "./InboxActions.js";
 import {
-  jsonResponse,
-  makeInboxMutationResponse as mutationResponse,
-  makeRecordingDetail,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+  inboxMutationResponseFactory,
+  recordingDetailFactory,
+} from "@rootscribe/shared/test-factories";
+import { InboxActions } from "./InboxActions.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
 
-// Compose on top of the shared makeRecordingDetail helper — only the
-// status-specific fields vary per test. Keeping just the status-derivation
-// logic here means RecordingDetail shape changes land in test-utils.tsx.
-function makeRecording(
-  effectiveInboxStatus: EffectiveInboxStatus,
-  overrides: Partial<RecordingDetail> = {},
-): RecordingDetail {
-  return makeRecordingDetail({
-    inboxStatus:
-      effectiveInboxStatus === "snoozed" ? "new" : effectiveInboxStatus,
-    effectiveInboxStatus,
-    snoozedUntil:
-      effectiveInboxStatus === "snoozed" ? Date.now() + 86_400_000 : null,
-    reviewedAt: effectiveInboxStatus === "reviewed" ? Date.now() : null,
-    ...overrides,
-  });
+// Build an InboxMutationResponse whose recording has a specific inboxStatus.
+// Used by the mutation tests to stub the server's PATCH response — callers
+// only care about the returned `inboxStatus`, so the factory's other
+// derivations (reviewedAt, snoozedUntil) are harmless defaults.
+function mutationResponseFor(
+  inboxStatus: "new" | "reviewed" | "archived",
+): ReturnType<typeof inboxMutationResponseFactory.build> {
+  return inboxMutationResponseFactory
+    .withRecording(recordingDetailFactory.build({ inboxStatus }))
+    .build();
 }
 
 describe("InboxActions — button surface per effective status", () => {
@@ -38,7 +29,7 @@ describe("InboxActions — button surface per effective status", () => {
   afterEach(() => stub.cleanup());
 
   it("on 'new': Mark Reviewed (primary), Snooze, Archive — no Reopen, no Unsnooze", () => {
-    renderWithProviders(<InboxActions recording={makeRecording("new")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.build()} />);
     expect(screen.getByRole("button", { name: /mark reviewed/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^snooze$/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^archive$/i })).toBeInTheDocument();
@@ -47,7 +38,7 @@ describe("InboxActions — button surface per effective status", () => {
   });
 
   it("on 'snoozed': Unsnooze (instead of Snooze), no Reopen", () => {
-    renderWithProviders(<InboxActions recording={makeRecording("snoozed")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.snoozed().build()} />);
     expect(screen.getByRole("button", { name: /unsnooze/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^snooze$/i })).not.toBeInTheDocument();
   });
@@ -57,7 +48,7 @@ describe("InboxActions — button surface per effective status", () => {
     // 'reviewed' so a user can archive an item they already marked reviewed
     // without first reopening it. The only state that hides Archive is
     // 'archived' itself.
-    renderWithProviders(<InboxActions recording={makeRecording("reviewed")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.reviewed().build()} />);
     expect(screen.getByRole("button", { name: /^reviewed$/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /reopen/i })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^archive$/i })).toBeInTheDocument();
@@ -66,7 +57,7 @@ describe("InboxActions — button surface per effective status", () => {
   });
 
   it("on 'archived': Reopen but no Archive button (hidden when already archived)", () => {
-    renderWithProviders(<InboxActions recording={makeRecording("archived")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.archived().build()} />);
     expect(screen.getByRole("button", { name: /reopen/i })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^archive$/i })).not.toBeInTheDocument();
   });
@@ -82,10 +73,10 @@ describe("InboxActions — mutations", () => {
 
   it("Mark Reviewed PATCHes /status with { status: 'reviewed' }", async () => {
     stub.fetch.mockResolvedValueOnce(
-      jsonResponse(mutationResponse({ inboxStatus: "reviewed" })),
+      jsonResponse(mutationResponseFor("reviewed")),
     );
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("new")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.build()} />);
 
     await user.click(screen.getByRole("button", { name: /mark reviewed/i }));
     await waitFor(() => expect(stub.fetch).toHaveBeenCalledTimes(1));
@@ -97,10 +88,10 @@ describe("InboxActions — mutations", () => {
 
   it("Archive PATCHes /status with { status: 'archived' }", async () => {
     stub.fetch.mockResolvedValueOnce(
-      jsonResponse(mutationResponse({ inboxStatus: "archived" })),
+      jsonResponse(mutationResponseFor("archived")),
     );
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("new")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.build()} />);
 
     await user.click(screen.getByRole("button", { name: /^archive$/i }));
     await waitFor(() => expect(stub.fetch).toHaveBeenCalledTimes(1));
@@ -111,10 +102,10 @@ describe("InboxActions — mutations", () => {
 
   it("Reopen PATCHes /status with { status: 'new' }", async () => {
     stub.fetch.mockResolvedValueOnce(
-      jsonResponse(mutationResponse({ inboxStatus: "new" })),
+      jsonResponse(mutationResponseFor("new")),
     );
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("reviewed")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.reviewed().build()} />);
 
     await user.click(screen.getByRole("button", { name: /reopen/i }));
     await waitFor(() => expect(stub.fetch).toHaveBeenCalledTimes(1));
@@ -124,9 +115,9 @@ describe("InboxActions — mutations", () => {
   });
 
   it("Unsnooze PATCHes /snooze with { snoozedUntil: null }", async () => {
-    stub.fetch.mockResolvedValueOnce(jsonResponse(mutationResponse()));
+    stub.fetch.mockResolvedValueOnce(jsonResponse(inboxMutationResponseFactory.build()));
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("snoozed")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.snoozed().build()} />);
 
     await user.click(screen.getByRole("button", { name: /unsnooze/i }));
     await waitFor(() => expect(stub.fetch).toHaveBeenCalledTimes(1));
@@ -137,9 +128,9 @@ describe("InboxActions — mutations", () => {
   });
 
   it("Snooze opens the SnoozeMenu popover on click; picking a preset PATCHes /snooze", async () => {
-    stub.fetch.mockResolvedValueOnce(jsonResponse(mutationResponse()));
+    stub.fetch.mockResolvedValueOnce(jsonResponse(inboxMutationResponseFactory.build()));
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("new")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.build()} />);
 
     await user.click(screen.getByRole("button", { name: /^snooze$/i }));
     // Popover opened — preset buttons are now available.
@@ -157,7 +148,7 @@ describe("InboxActions — mutations", () => {
       jsonResponse({ error: "nope" }, { status: 500 }),
     );
     const user = userEvent.setup();
-    renderWithProviders(<InboxActions recording={makeRecording("new")} />);
+    renderWithProviders(<InboxActions recording={recordingDetailFactory.build()} />);
 
     await user.click(screen.getByRole("button", { name: /mark reviewed/i }));
     expect(await screen.findByText(/nope/i)).toBeInTheDocument();

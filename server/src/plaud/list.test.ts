@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaudListResponse, PlaudRawRecording } from "@rootscribe/shared";
+import { plaudRawRecordingFactory } from "@rootscribe/shared/test-factories";
 
 // Stub the low-level HTTP helper so these tests cover list.ts's query-param
 // logic in isolation. The plaudJson → plaudFetch → fetch stack is exercised
@@ -12,27 +13,10 @@ vi.mock("./client.js", () => ({
 
 const { listRecordings, listAll } = await import("./list.js");
 
-function makeRecording(overrides: Partial<PlaudRawRecording> = {}): PlaudRawRecording {
-  // Mirror the full PlaudRawRecording shape so a downstream consumer
-  // accessing any documented field doesn't trip on a partial mock.
-  return {
-    id: "r1",
-    filename: "recording",
-    fullname: "2026-04-18 recording.ogg",
-    filesize: 12345,
-    file_md5: "deadbeef",
-    start_time: 1_775_000_000_000,
-    end_time: 1_775_000_060_000,
-    duration: 60,
-    version: 1,
-    version_ms: 1_775_000_000_000,
-    edit_time: 1_775_000_060_000,
-    is_trash: false,
-    is_trans: true,
-    is_summary: true,
-    serial_number: "SN-001",
-    ...overrides,
-  };
+function makeRecording(
+  overrides: Partial<PlaudRawRecording> = {},
+): PlaudRawRecording {
+  return plaudRawRecordingFactory.build(overrides);
 }
 
 function makeResponse(

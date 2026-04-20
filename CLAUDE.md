@@ -86,6 +86,12 @@ See **README.md → Running tests / CI/CD / Contributing**. Key points:
 - Coverage thresholds are pinned just below the achieved baseline in `vitest.config.ts`. They ratchet up via [DEVX-102](https://rootfunctionalmedicine.atlassian.net/browse/DEVX-102).
 - TDD is the default. Don't slip refactors or speculative abstractions into bug-fix or infra-only tickets.
 - Never test mock behavior. Never add test-only methods to production classes. Mock only at the network boundary.
+- **Fishery is the standard for building test objects.** Before hand-rolling an object literal in a spec, look for an existing factory:
+  - Shared shapes (`RecordingDetail`, `JiraLink`, `InboxMutationResponse`, `RecordingRow`, `PlaudRawRecording`) → [`shared/src/test-factories/`](shared/src/test-factories), imported via `@rootscribe/shared/test-factories`.
+  - Web-specific shapes (`AppConfig`, `SyncStatusResponse`, list/detail response wrappers, `InboxFiltersProps`) → [`web/src/test-factories/`](web/src/test-factories).
+  - Server-specific shapes (`FileDetailData`, `SeedRecording`) → [`server/src/test-factories/`](server/src/test-factories).
+  - inbox-mcp `SeedRecording` → [`inbox-mcp/tests/factories/`](inbox-mcp/tests/factories) (the existing sparse-input `seedRecording()` helper is already factory-shaped, so most call sites don't need to wrap it).
+- **Any new shape built in 2+ spec files OR with 5+ fields must be a Fishery factory** — add one rather than duplicating an object literal. Traits express variations (e.g. `recordingDetailFactory.reviewed().withJiraLinks(link).build()`). One-off literals (single use, under 5 fields) remain the only exception. Rationale + audit: [DEVX-104](https://rootfunctionalmedicine.atlassian.net/browse/DEVX-104).
 
 ## Jira project
 
