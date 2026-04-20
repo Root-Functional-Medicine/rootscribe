@@ -89,14 +89,21 @@ class RecordingDetailFactory extends Factory<RecordingDetail> {
     return this.params({ summaryMarkdown }) as this;
   }
 
-  // `pending_audio` is a pre-download state — audio hasn't landed yet, so
-  // audioDownloadedAt stays null and audioPath is null too. The inbox surface
-  // treats this as "not actionable yet".
+  // `pending_audio` = row exists with paths computed but audio file hasn't
+  // finished downloading. The server's `upsertFromPlaud` populates all four
+  // *_Path columns at INSERT time from `recordingPaths(cfg.recordingsDir,
+  // folder)`; `pending_audio` is derived purely from `audio_downloaded_at IS
+  // NULL` (see server/src/db.ts::deriveStatus). Mirror that here so tests
+  // that model real API payloads don't trip on a null path when production
+  // code assumes the path exists.
   pendingAudio(): this {
     return this.params({
       status: "pending_audio",
       audioDownloadedAt: null,
-      audioPath: null,
+      audioPath: "audio.ogg",
+      transcriptPath: "transcript.json",
+      summaryPath: "summary.md",
+      metadataPath: "metadata.json",
     }) as this;
   }
 
