@@ -444,12 +444,11 @@ describe("Dashboard — search + Sync Now", () => {
     routeDashboardFetch(stub, { list: listResponse([]) });
     renderWithProviders(<Dashboard />);
 
-    // Wait for InboxFilters to render, then scope the query — both Tag and
-    // Category inputs share `placeholder="any"`, so use findAll + pick the
-    // one wrapped by the "Tag" label (DOM order: Tag first, Category second).
-    const anyInputs = await screen.findAllByPlaceholderText(/^any$/i);
-    expect(anyInputs.length).toBeGreaterThanOrEqual(2);
-    const tagInput = anyInputs[0]!;
+    // Target the Tag field by its accessible label — `InboxFilters` wraps
+    // both inputs in `<label>` elements with visible "Tag" / "Category"
+    // text, which is a stable anchor that doesn't depend on shared
+    // placeholder text or DOM order.
+    const tagInput = await screen.findByLabelText(/tag/i);
     await user.type(tagInput, "billing");
 
     await waitFor(() => {

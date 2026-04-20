@@ -547,19 +547,20 @@ function TranscriptCard({
   }, [blocks, currentTime]);
 
   // Auto-scroll to active playback block (only when not searching). The
-  // scrollTo + layout-measurement branches depend on a real browser layout
-  // engine — happy-dom reports 0 for offsetTop/scrollTop/clientHeight, so
-  // the `elTop < scrollTop || elBottom > scrollTop + viewHeight` condition
-  // evaluates to false in tests and the scrollTo is never reached. Rather
-  // than mocking the full HTMLElement layout protocol, ignore these two
-  // dead-in-test branches; e2e specs exercise the real scroll path.
-  /* v8 ignore start -- requires real browser layout; covered by Playwright */
+  // early-return guards (`if (searchQuery)` / `if (activeIndex < 0)`) DO
+  // fire in tests and are worth covering — it's only the layout-dependent
+  // scroll condition + the scrollTo call that need ignoring, because
+  // happy-dom reports 0 for offsetTop/scrollTop/clientHeight so the
+  // `elTop < scrollTop || elBottom > scrollTop + viewHeight` condition
+  // always evaluates to false. Playwright e2e specs exercise the real
+  // scroll path against a real browser layout engine.
   useEffect(() => {
     if (searchQuery) return;
     if (activeIndex < 0) return;
     const el = blockRefs.current.get(activeIndex);
     if (el && transcriptRef.current) {
       const container = transcriptRef.current;
+      /* v8 ignore start -- layout measurement + scrollTo need a real browser; covered by Playwright */
       const elTop = el.offsetTop - container.offsetTop;
       const elBottom = elTop + el.offsetHeight;
       const scrollTop = container.scrollTop;
@@ -567,9 +568,9 @@ function TranscriptCard({
       if (elTop < scrollTop || elBottom > scrollTop + viewHeight) {
         container.scrollTo({ top: elTop - 40, behavior: "smooth" });
       }
+      /* v8 ignore stop */
     }
   }, [activeIndex, blockRefs, transcriptRef, searchQuery]);
-  /* v8 ignore stop */
 
   // Fallback for unparseable transcripts
   if (blocks.length === 0) {

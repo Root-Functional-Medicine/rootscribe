@@ -404,18 +404,13 @@ describe("RecordingDetailPage — transcript", () => {
     renderDetail();
 
     const bobBlock = await screen.findByText(/General Kenobi/);
-    // Walk up to the row element that carries the onClick handler. The
-    // outermost flex container gets `cursor-pointer`. Testing Library
-    // doesn't expose a `closest()`-equivalent query, so this is the
-    // documented escape hatch for "click the containing interactive div"
-    // when the text lives on a descendant paragraph.
-    // eslint-disable-next-line testing-library/no-node-access
-    const row = bobBlock.closest('[class*="cursor-pointer"]');
-    expect(row).not.toBeNull();
-    // userEvent.click dispatches a real synthetic event through React; if
-    // this doesn't throw, the onClick handler ran — and onSeek inside it is
-    // a no-op when the audio element doesn't have a buffered source.
-    await user.click(row!);
+    // React click events bubble, so clicking the text node itself reaches
+    // the row's onClick handler — no need to walk up the DOM via closest().
+    // onSeek inside the handler is a no-op when the audio element doesn't
+    // have a buffered source, so we just assert the click dispatch didn't
+    // throw and the block is still in the DOM after the handler runs.
+    await user.click(bobBlock);
+    expect(bobBlock).toBeInTheDocument();
   });
 });
 
