@@ -382,6 +382,89 @@ describe("Dashboard — search + Sync Now", () => {
     ).toBe(false);
   });
 
+  it("clicking a filter tab updates the URL and refires the list query with the filter param", async () => {
+    // Hits the updateParams helper (Dashboard.tsx:146-158) — previous tests
+    // only exercised URL-driven reads, never a user-initiated filter change.
+    const user = userEvent.setup();
+    routeDashboardFetch(stub, { list: listResponse([]) });
+    renderWithProviders(<Dashboard />);
+
+    // Click the "Reviewed" tab (a <button> with aria-pressed in InboxFilters).
+    const reviewedBtn = await screen.findByRole("button", { name: /reviewed/i });
+    await user.click(reviewedBtn);
+
+    await waitFor(() => {
+      expect(
+        stub.fetch.mock.calls.some(([input]) => {
+          const url = typeof input === "string" ? input : String(input);
+          return (
+            url.startsWith("/api/recordings") &&
+            !url.includes("facets=1") &&
+            url.includes("filter=reviewed")
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
+  it("clicking the 'All' tab after a filter was active DELETES the filter param (updateParams else-branch)", async () => {
+    // Start with `?filter=reviewed`, then click "All". updateParams receives
+    // `{ filter: null }` — the `if (value) next.set` branch fails so the
+    // `else { next.delete }` branch fires. Previously uncovered.
+    const user = userEvent.setup();
+    routeDashboardFetch(stub, { list: listResponse([]) });
+    renderWithProviders(<Dashboard />, {
+      routerEntries: ["/?filter=reviewed"],
+    });
+
+    const allBtn = await screen.findByRole("button", { name: /^all$/i });
+    await user.click(allBtn);
+
+    // After the click, the new list request should NOT carry filter=.
+    await waitFor(() => {
+      const calls = stub.fetch.mock.calls.map(([i]) =>
+        typeof i === "string" ? i : String(i),
+      );
+      const lastListCall = calls
+        .filter(
+          (u) =>
+            u.startsWith("/api/recordings") && !u.includes("facets=1"),
+        )
+        .at(-1);
+      expect(lastListCall).toBeDefined();
+      expect(lastListCall).not.toContain("filter=");
+    });
+  });
+
+  it("typing into the tag input invokes updateParams with replace:true (doesn't clutter history)", async () => {
+    // Exercises the tag-input onChange → onTagChange → updateParams path,
+    // which was uncovered. The replace-flag branch at Dashboard.tsx:260 is
+    // distinct from the filter-tab branch (which uses replace:false).
+    const user = userEvent.setup();
+    routeDashboardFetch(stub, { list: listResponse([]) });
+    renderWithProviders(<Dashboard />);
+
+    // Target the Tag field by its accessible label — `InboxFilters` wraps
+    // both inputs in `<label>` elements with visible "Tag" / "Category"
+    // text, which is a stable anchor that doesn't depend on shared
+    // placeholder text or DOM order.
+    const tagInput = await screen.findByLabelText(/tag/i);
+    await user.type(tagInput, "billing");
+
+    await waitFor(() => {
+      expect(
+        stub.fetch.mock.calls.some(([input]) => {
+          const url = typeof input === "string" ? input : String(input);
+          return (
+            url.startsWith("/api/recordings") &&
+            !url.includes("facets=1") &&
+            url.includes("tag=billing")
+          );
+        }),
+      ).toBe(true);
+    });
+  });
+
   it("clicking Sync Now hits /api/sync/trigger and disables the button while pending", async () => {
     const user = userEvent.setup();
     // Express the resolver as an external Deferred-like handle so TypeScript

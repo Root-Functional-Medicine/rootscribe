@@ -589,4 +589,24 @@ describe("poller.tryTranscript — flow", () => {
     // "both" is in the current page (pending retry short-circuits).
     expect(vi.mocked(getTranscriptAndSummary)).not.toHaveBeenCalled();
   });
+
+  it("records the error via String(err) when tryTranscript rejects a non-Error value", async () => {
+    // Hits the ternary at poller.ts:160 — both branches of
+    // `err instanceof Error ? err.message : String(err)`. The existing
+    // error-path tests use real Errors; this one throws a plain string.
+    vi.mocked(listRecordings).mockResolvedValueOnce(plaudPage([]));
+    vi.mocked(findPendingTranscriptIds).mockReturnValue(["pending-string"]);
+    vi.mocked(getRecordingById).mockReturnValue(
+      makeRow("pending-string", { audioDownloadedAt: Date.now() }),
+    );
+    vi.mocked(getTranscriptAndSummary).mockRejectedValue(
+      "raw-string-not-an-error",
+    );
+
+    await poller.trigger();
+    expect(vi.mocked(recordError)).toHaveBeenCalledWith(
+      "pending-string",
+      "raw-string-not-an-error",
+    );
+  });
 });

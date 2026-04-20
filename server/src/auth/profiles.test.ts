@@ -209,3 +209,224 @@ describe("discoverProfiles under WSL", () => {
     expect(found.map((f) => f.browser)).toContain("Chrome");
   });
 });
+
+// The `wslWindowsUsernames()` helper needs `/mnt/c/Users` to exist to get past
+// the early-return. On a real CI box we can't create that mount, so we re-mock
+// `node:fs` to synthesize one. Each test resets modules + re-imports to get a
+// fresh `profiles.ts` binding bound to the patched fs.
+describe("wslWindowsUsernames — /mnt/c/Users enumeration (mocked fs)", () => {
+  afterEach(() => {
+    vi.doUnmock("node:fs");
+    vi.resetModules();
+  });
+
+  async function withFakeWslFs(
+    overrides: {
+      existsOf?: (p: string) => boolean;
+      readdirOf?: (p: string) => string[] | never;
+      isDirOf?: (p: string) => boolean | never;
+    } = {},
+  ): Promise<typeof import("./profiles.js")> {
+    vi.resetModules();
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+      return {
+        ...actual,
+        existsSync: (p: string) => {
+          if (overrides.existsOf) return overrides.existsOf(p);
+          return actual.existsSync(p);
+        },
+        readdirSync: ((p: string, ...rest: unknown[]) => {
+          if (overrides.readdirOf) return overrides.readdirOf(p);
+          return (actual.readdirSync as unknown as (p: string, ...rest: unknown[]) => unknown)(
+            p,
+            ...rest,
+          );
+        }) as unknown as typeof actual.readdirSync,
+        statSync: ((p: string, ...rest: unknown[]) => {
+          if (overrides.isDirOf) {
+            const isDir = overrides.isDirOf(p);
+            return {
+              isDirectory: () => isDir,
+              isFile: () => !isDir,
+            } as unknown as ReturnType<typeof actual.statSync>;
+          }
+          return (actual.statSync as unknown as (p: string, ...rest: unknown[]) => unknown)(
+            p,
+            ...rest,
+          );
+        }) as unknown as typeof actual.statSync,
+      };
+    });
+    return await import("./profiles.js");
+  }
+
+  it("appends Windows browser roots under each /mnt/c/Users/<user>/AppData/Local", async () => {
+    // The fake fs reports:
+    //   - /mnt/c/Users exists
+    //   - its readdir returns ["alice", "Default", ".hidden", "bob"]
+    //   - alice & bob are directories; Default & .hidden are filtered by name
+    //   - Chrome's leveldb exists under alice's LocalAppData only
+    const aliceChromeLdb = path.join(
+      "/mnt/c/Users/alice/AppData/Local",
+      "Google",
+      "Chrome",
+      "User Data",
+      "Default",
+      "Local Storage",
+      "leveldb",
+    );
+    const mod = await withFakeWslFs({
+      existsOf: (p) => {
+        if (p === "/mnt/c/Users") return true;
+        if (p === aliceChromeLdb) return true;
+        // User-data-dirs themselves exist so listProfiles reaches readdir.
+        if (p === path.join("/mnt/c/Users/alice/AppData/Local", "Google", "Chrome", "User Data")) return true;
+        return false;
+      },
+      readdirOf: (p) => {
+        if (p === "/mnt/c/Users") return ["alice", "Default", ".hidden", "bob", "README.ini"];
+        if (p === path.join("/mnt/c/Users/alice/AppData/Local", "Google", "Chrome", "User Data"))
+          return ["Default"];
+        return [];
+      },
+      isDirOf: (p) => {
+        if (p === "/mnt/c/Users/alice" || p === "/mnt/c/Users/bob") return true;
+        if (p.endsWith("Default")) return true;
+        return false;
+      },
+    });
+    osMocks.platformMock.mockReturnValue("linux");
+    pathsMocks.isWslMock.mockReturnValue(true);
+    osMocks.homedirMock.mockReturnValue("/home/test");
+
+    const found = mod.discoverProfiles();
+
+    // The Chrome leveldb is only present under alice's LocalAppData; bob has
+    // no populated browser dirs. Exactly one profile should be discovered.
+    expect(found).toHaveLength(1);
+    expect(found[0]!.browser).toBe("Chrome");
+    expect(found[0]!.leveldbPath).toBe(aliceChromeLdb);
+  });
+
+  it("returns [] for wslWindowsUsernames when readdirSync throws (drive unmount mid-read)", async () => {
+    const mod = await withFakeWslFs({
+      existsOf: (p) => p === "/mnt/c/Users",
+      readdirOf: (p) => {
+        if (p === "/mnt/c/Users") throw new Error("EIO: drive went away");
+        return [];
+      },
+    });
+    osMocks.platformMock.mockReturnValue("linux");
+    pathsMocks.isWslMock.mockReturnValue(true);
+    osMocks.homedirMock.mockReturnValue("/home/test");
+
+    // The outer catch should swallow the readdir error → empty username list
+    // → no Windows roots appended. Linux roots still run, but the fake home
+    // has no populated browser dirs either, so the final result is [].
+    expect(mod.discoverProfiles()).toEqual([]);
+  });
+
+  it("treats a /mnt/c/Users/<user> entry as non-user when statSync throws", async () => {
+    // Exercises the inner `catch { return false; }` on statSync(path.join(base, n)):
+    // one of the readdir results can't be stat'd, so the filter drops it
+    // instead of bubbling the throw out.
+    const mod = await withFakeWslFs({
+      existsOf: (p) => p === "/mnt/c/Users",
+      readdirOf: (p) => (p === "/mnt/c/Users" ? ["borked"] : []),
+      isDirOf: (p) => {
+        if (p === "/mnt/c/Users/borked") throw new Error("EACCES");
+        return false;
+      },
+    });
+    osMocks.platformMock.mockReturnValue("linux");
+    pathsMocks.isWslMock.mockReturnValue(true);
+    osMocks.homedirMock.mockReturnValue("/home/test");
+
+    // "borked" gets filtered out → no Windows roots appended → no profiles
+    // found (and critically no throw escapes).
+    expect(mod.discoverProfiles()).toEqual([]);
+  });
+});
+
+// listProfiles has its own try/catch blocks: the outer `try { readdir... }`
+// and an inner `try { statSync... isDirectory() }` per candidate. The normal
+// fs-backed tests don't hit those catches (real dirs just read fine), so
+// re-mock `node:fs` to force each throw.
+describe("listProfiles — error branches (mocked fs)", () => {
+  afterEach(() => {
+    vi.doUnmock("node:fs");
+    vi.resetModules();
+  });
+
+  async function withFakeFs(
+    overrides: {
+      existsOf?: (p: string) => boolean;
+      readdirOf?: (p: string) => string[] | never;
+      statSyncOf?: (p: string) => { isDirectory: () => boolean } | never;
+    } = {},
+  ): Promise<typeof import("./profiles.js")> {
+    vi.resetModules();
+    vi.doMock("node:fs", async () => {
+      const actual = await vi.importActual<typeof import("node:fs")>("node:fs");
+      return {
+        ...actual,
+        existsSync: (p: string) =>
+          overrides.existsOf ? overrides.existsOf(p) : actual.existsSync(p),
+        readdirSync: ((p: string, ...rest: unknown[]) =>
+          overrides.readdirOf
+            ? overrides.readdirOf(p)
+            : (actual.readdirSync as unknown as (p: string, ...rest: unknown[]) => unknown)(
+                p,
+                ...rest,
+              )) as unknown as typeof actual.readdirSync,
+        statSync: ((p: string, ...rest: unknown[]) => {
+          if (overrides.statSyncOf) return overrides.statSyncOf(p);
+          return (actual.statSync as unknown as (p: string, ...rest: unknown[]) => unknown)(
+            p,
+            ...rest,
+          );
+        }) as unknown as typeof actual.statSync,
+      };
+    });
+    return await import("./profiles.js");
+  }
+
+  it("returns [] when readdirSync on the user-data-dir throws (outer catch)", async () => {
+    const userDataDir = path.join("/home/test", ".config", "google-chrome");
+    const mod = await withFakeFs({
+      existsOf: (p) => p === userDataDir,
+      readdirOf: (p) => {
+        if (p === userDataDir) throw new Error("EACCES: permission denied");
+        return [];
+      },
+    });
+    osMocks.platformMock.mockReturnValue("linux");
+    pathsMocks.isWslMock.mockReturnValue(false);
+    osMocks.homedirMock.mockReturnValue("/home/test");
+
+    expect(mod.discoverProfiles()).toEqual([]);
+  });
+
+  it("drops a profile candidate when statSync throws (inner catch)", async () => {
+    // readdir surfaces two names. "Default" stat succeeds and IS a directory
+    // — but its leveldb doesn't exist. "Profile 1" throws on statSync and
+    // must be skipped instead of bubbling.
+    const userDataDir = path.join("/home/test", ".config", "google-chrome");
+    const defaultLdb = path.join(userDataDir, "Default", "Local Storage", "leveldb");
+    const mod = await withFakeFs({
+      existsOf: (p) => p === userDataDir || p === defaultLdb,
+      readdirOf: (p) => (p === userDataDir ? ["Default", "Profile 1"] : []),
+      statSyncOf: (p) => {
+        if (p === path.join(userDataDir, "Profile 1")) throw new Error("EACCES");
+        return { isDirectory: () => true };
+      },
+    });
+    osMocks.platformMock.mockReturnValue("linux");
+    pathsMocks.isWslMock.mockReturnValue(false);
+    osMocks.homedirMock.mockReturnValue("/home/test");
+
+    const found = mod.discoverProfiles();
+    expect(found.map((f) => f.profile)).toEqual(["Default"]);
+  });
+});

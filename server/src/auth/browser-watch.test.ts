@@ -240,4 +240,30 @@ describe("subscribeWatch / stopWatch", () => {
     expect(events.length).toBe(afterFirst);
     stopWatch(id);
   });
+
+  it("swallows a listener that throws so the rest of the subscriber list keeps receiving events", async () => {
+    // Covers the try/catch + `logger.warn` at browser-watch.ts:65-69.
+    // One listener throws, another records cleanly — both registered before
+    // any events are dispatched. The throwing listener must not break
+    // delivery to the clean listener.
+    vi.mocked(findToken).mockResolvedValue(null);
+    const id = await startBrowserWatch(false);
+
+    subscribeWatch(id, () => {
+      throw new Error("listener is broken");
+    });
+    const clean: WatchEvent[] = [];
+    subscribeWatch(id, (e) => clean.push(e));
+
+    // Let the 5s heartbeat fire so both listeners get exercised in the
+    // same dispatch loop.
+    await vi.advanceTimersByTimeAsync(5_100);
+
+    // The clean listener still received the waiting event; the throw
+    // didn't short-circuit the for-loop over listeners.
+    expect(clean.length).toBeGreaterThanOrEqual(1);
+    expect(clean.some((e) => e.type === "waiting")).toBe(true);
+
+    stopWatch(id);
+  });
 });

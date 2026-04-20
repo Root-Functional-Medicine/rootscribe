@@ -97,6 +97,7 @@ async function scanProfile(p: BrowserProfile): Promise<FoundToken | null> {
         const keyStr = k.toString("latin1");
         if (!email) {
           const emailMatch = keyStr.match(/PLADU_([^_\s]+@[^_\s]+)_/);
+          /* v8 ignore next -- ?? null is dead; if match succeeded, group 1 is always defined */
           if (emailMatch) email = emailMatch[1] ?? null;
         }
         if (!token) {
@@ -104,6 +105,7 @@ async function scanProfile(p: BrowserProfile): Promise<FoundToken | null> {
           const m = keyStr.match(
             /bearer (eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)/,
           );
+          /* v8 ignore next -- `m && m[1]` second arm is dead: capture group 1 exists when regex matches */
           if (m && m[1]) token = m[1];
         }
       }
@@ -153,6 +155,11 @@ export async function findToken(): Promise<FoundToken | null> {
     }
   }
   if (results.length === 0) return null;
+  // `iat ?? 0` is load-bearing: malformed JWT payloads make `parseJwt()`
+  // return `iat:null`, and when multiple profiles yield tokens we need a
+  // stable comparator that puts null-iat entries last without throwing.
+  // Covered by findToken's multi-profile-with-null-iat test in chrome-leveldb.test.ts.
   results.sort((a, b) => (b.iat ?? 0) - (a.iat ?? 0));
+  /* v8 ignore next -- ?? null at index 0 of a non-empty array is dead after the length guard above */
   return results[0] ?? null;
 }

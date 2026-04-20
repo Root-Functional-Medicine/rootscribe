@@ -53,6 +53,7 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     id,
     startedAt,
     listeners,
+    /* v8 ignore next -- placeholder; reassigned to real stop() below before any caller sees this object */
     stop: () => undefined,
     done: false,
     lastEvent: null,

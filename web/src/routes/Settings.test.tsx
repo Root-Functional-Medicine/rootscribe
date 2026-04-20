@@ -474,6 +474,125 @@ describe("Settings — jira base URL preview", () => {
   });
 });
 
+describe("Settings — formatRelative branches", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  // The Settings page runs a 5s refetch on /api/sync/status, so lastPollAt
+  // threads through formatRelative on every render. Exercise every branch
+  // by seeding varying `lastPollAt` values and reading the "Last poll" tile.
+  //
+  // `it.each` computes its input array when the test FILE is evaluated, not
+  // when each test runs. A raw `Date.now() - 3_000` in the array would be
+  // stale by the time this block ran — the "< 10s" case could drift past 10s
+  // (becoming "Xs ago"), and the "< 60s" case could drift past 60s (becoming
+  // "Xm ago") — making the regex assertions flaky. Store *offsets* instead
+  // and resolve them to absolute timestamps inside the test body, where
+  // Date.now() is fresh.
+  const DAY = 24 * 3_600_000;
+  it.each([
+    { offsetMs: null as number | null, expected: /never/i, label: "null → never" },
+    { offsetMs: 3_000, expected: /just now/i, label: "< 10s → just now" },
+    { offsetMs: 30_000, expected: /\d+s ago/i, label: "< 60s → Xs ago" },
+    { offsetMs: 5 * 60_000, expected: /5m ago/i, label: "< 1h → Xm ago" },
+    { offsetMs: 2 * 3_600_000, expected: /2h ago/i, label: "≥ 1h → Xh ago" },
+    { offsetMs: DAY, expected: /24h ago/i, label: "24h → Xh ago (no day cap)" },
+  ])("renders $label", async ({ offsetMs, expected }) => {
+    const lastPollAt = offsetMs == null ? null : Date.now() - offsetMs;
+    routeSettingsFetch(stub, { sync: syncStatus({ lastPollAt }) });
+    renderWithProviders(<Settings />);
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+  });
+});
+
+describe("Settings — test-webhook error handling", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  it("surfaces err.message when api.testWebhook rejects with a native Error", async () => {
+    const user = userEvent.setup();
+    // Override fetch for test-webhook to reject — this escapes through the
+    // catch in Settings.tsx's `test()` helper (`err instanceof Error` → true).
+    stub.fetch.mockImplementation((input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/config")
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({
+              webhook: { url: "https://hook.example", enabled: true },
+            }),
+          }),
+        );
+      if (url === "/api/config/test-webhook")
+        return Promise.reject(new Error("network down"));
+      if (url === "/api/sync/status")
+        return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await user.click(await screen.findByRole("button", { name: /^test$/i }));
+    expect(await screen.findByText(/connection failed/i)).toBeInTheDocument();
+    expect(screen.getByText(/network down/i)).toBeInTheDocument();
+  });
+
+  it("surfaces String(err) when api.testWebhook rejects with a non-Error value", async () => {
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url === "/api/config")
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({
+              webhook: { url: "https://hook.example", enabled: true },
+            }),
+          }),
+        );
+      if (url === "/api/config/test-webhook")
+        return Promise.reject("string-thrown");
+      if (url === "/api/sync/status")
+        return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await user.click(await screen.findByRole("button", { name: /^test$/i }));
+    expect(await screen.findByText(/connection failed/i)).toBeInTheDocument();
+    expect(screen.getByText("string-thrown")).toBeInTheDocument();
+  });
+
+  it("falls back to the generic save-error message when err isn't an Error", async () => {
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET")
+        return Promise.resolve(jsonResponse({ config: makeConfig() }));
+      if (url === "/api/config" && method === "POST")
+        return Promise.reject("not-an-Error-instance");
+      if (url === "/api/sync/status")
+        return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    const slider = await screen.findByRole("slider");
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.change(slider, { target: { value: "30" } });
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    // Save catch: `err instanceof Error ? err.message : "Failed to save settings."`
+    // For a non-Error throw, the right-hand branch fires and we see the
+    // literal fallback string.
+    expect(
+      await screen.findByText(/failed to save settings/i),
+    ).toBeInTheDocument();
+  });
+});
+
 describe("Settings — poll interval slider", () => {
   let stub: ReturnType<typeof stubFetch>;
   beforeEach(() => {

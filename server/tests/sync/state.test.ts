@@ -131,6 +131,30 @@ describe("upsertFromPlaud", () => {
     expect(renamed.filename).toBe("new improved name");
     expect(renamed.folder).toContain("new_improved_name");
   });
+
+  it("takes the fast-path (filename-only UPDATE, no folder rename) when the new folder name equals the old", async () => {
+    // Hits the `if (newFolder === row.folder)` branch at state.ts:88-91.
+    // Trigger it by upserting two filenames that sanitize to the same slug:
+    // multiple-space collapse + tab→space normalization → both produce
+    // "name_extra_spaces" after sanitizeFilename.
+    upsertFromPlaud(
+      rawRecording({ id: "rec-nochange", filename: "name extra spaces" }),
+    );
+    const rowBefore = getRecordingById("rec-nochange")!;
+
+    const after = upsertFromPlaud(
+      rawRecording({
+        id: "rec-nochange",
+        // Double spaces + a stray tab all collapse to single underscores
+        // identical to the first upsert's folder slug.
+        filename: "name  extra\tspaces",
+      }),
+    );
+    // Filename column reflects the new raw string, but the folder slug
+    // didn't change — the fast-path filename-only UPDATE ran.
+    expect(after.filename).toBe("name  extra\tspaces");
+    expect(after.folder).toBe(rowBefore.folder);
+  });
 });
 
 describe("download/error markers", () => {

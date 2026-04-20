@@ -222,6 +222,60 @@ describe("POST /api/auth/accept", () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain("expired");
   });
+
+  it("returns 400 + ok:false with err.message when plaudFetch throws a non-PlaudAuthError Error", async () => {
+    // Hits validateToken's `err instanceof Error ? err.message : String(err)`
+    // in the *true* branch (Error but not PlaudAuthError).
+    vi.mocked(plaudFetch).mockRejectedValue(new Error("ECONNRESET"));
+
+    const res = await request(app)
+      .post("/api/auth/accept")
+      .send({ token: JWT });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ECONNRESET");
+  });
+
+  it("returns 400 + ok:false with String(err) when plaudFetch throws a non-Error value", async () => {
+    // Hits the *false* branch of the ternary: String(err) for plain strings,
+    // numbers, or other non-Error throwables (legal JS but uncommon).
+    vi.mocked(plaudFetch).mockRejectedValue("not-even-an-error");
+
+    const res = await request(app)
+      .post("/api/auth/accept")
+      .send({ token: JWT });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("not-even-an-error");
+  });
+
+  it("persists token with iat/exp/email/region all null when parseJwt's JSON.parse throws", async () => {
+    // A valid-format JWT (regex-match for `eyJ...eyJ...sig`) whose middle
+    // segment base64-decodes to non-JSON — parseJwt's try block throws,
+    // the catch returns all-null fields, and the route still persists the
+    // token (validateToken succeeded against Plaud; the JWT-parse step is
+    // informational only).
+    const malformed = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpbnZhbGlkLWpzb24.sig";
+    vi.mocked(plaudFetch).mockResolvedValue(
+      new Response(JSON.stringify({ status: 0 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    const res = await request(app)
+      .post("/api/auth/accept")
+      .send({ token: malformed });
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    const cfg = loadConfig();
+    expect(cfg.token).toBe(malformed);
+    // parseJwt's catch fed null into all four fields.
+    expect(cfg.tokenEmail).toBeNull();
+    expect(cfg.tokenExp).toBeNull();
+    expect(cfg.plaudRegion).toBeNull();
+  });
 });
 
 describe("POST /api/auth/validate", () => {
@@ -275,6 +329,65 @@ describe("POST /api/auth/watch", () => {
     const res = await request(app).post("/api/auth/watch").send({});
     expect(res.status).toBe(500);
     expect(res.body.error).toContain("no browser");
+  });
+
+  it("returns 500 with String(err) when startBrowserWatch rejects a non-Error", async () => {
+    // Hits the right-hand `String(err)` branch of the ternary at routes/auth.ts:137.
+    vi.mocked(startBrowserWatch).mockRejectedValue("string-thrown");
+    const res = await request(app).post("/api/auth/watch").send({});
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("string-thrown");
+  });
+});
+
+describe("POST /api/auth/detect — remaining branches", () => {
+  it("returns email=undefined (not email=null) when findToken returns email=null", async () => {
+    // Covers the `found.email ?? undefined` branch at routes/auth.ts:69.
+    vi.mocked(findToken).mockResolvedValue({
+      token: JWT,
+      browser: "Chrome",
+      profile: "Default",
+      email: null,
+      iat: null,
+      exp: null,
+    });
+    const res = await request(app).post("/api/auth/detect").send({});
+    expect(res.status).toBe(200);
+    expect(res.body.found).toBe(true);
+    // JSON.stringify drops undefined fields, so `email` should be ABSENT
+    // from the serialized response — proving the ?? undefined branch fired.
+    expect(res.body).not.toHaveProperty("email");
+  });
+
+  it("returns 500 with err.message when findToken rejects with an Error", async () => {
+    // Covers the detect try/catch (routes/auth.ts:72-79) Error-branch.
+    vi.mocked(findToken).mockRejectedValue(new Error("chrome locked"));
+    const res = await request(app).post("/api/auth/detect").send({});
+    expect(res.status).toBe(500);
+    expect(res.body.found).toBe(false);
+    expect(res.body.error).toBe("chrome locked");
+  });
+
+  it("returns 500 with String(err) when findToken rejects with a non-Error value", async () => {
+    // Covers the detect catch's `String(err)` branch.
+    vi.mocked(findToken).mockRejectedValue("plain-string-throw");
+    const res = await request(app).post("/api/auth/detect").send({});
+    expect(res.status).toBe(500);
+    expect(res.body.error).toBe("plain-string-throw");
+  });
+});
+
+describe("POST /api/auth/validate — remaining branches", () => {
+  it("returns ok:false with a descriptive error when the body contains no JWT-shaped substring", async () => {
+    // Covers the `if (!jwt)` branch at routes/auth.ts:122 — extractJwt returns
+    // null when the regex doesn't match. Body must be ≥10 chars to pass
+    // AcceptSchema's min(10); no eyJ. fragment so extractJwt bails.
+    const res = await request(app)
+      .post("/api/auth/validate")
+      .send({ token: "thisisatenplusstringwithnojwt" });
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toContain("no JWT");
   });
 });
 

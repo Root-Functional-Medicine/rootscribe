@@ -124,6 +124,12 @@ function migrate(d: Database.Database): void {
 
   // v4 (rootscribe): inbox workflow + jira links + tags.
   // Uses prepare().run() per statement to keep each DDL discrete.
+  // The idempotent-return path IS exercised (re-running migrations on an
+  // already-migrated DB hits the "duplicate column" / "already exists"
+  // branches via startup). Only the final re-throw is defensive — we
+  // control all DDL in-file, so in practice no statement throws anything
+  // the inner `if` doesn't already handle. Narrow the ignore to just the
+  // re-throw so coverage still guards the idempotent-return behavior.
   const safeDdl = (sql: string): void => {
     try {
       d.prepare(sql).run();
@@ -134,6 +140,7 @@ function migrate(d: Database.Database): void {
           return;
         }
       }
+      /* v8 ignore next -- non-idempotency migration failure; all in-file DDL is controlled, no legitimate way to trigger */
       throw err;
     }
   };

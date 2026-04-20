@@ -138,6 +138,85 @@ describe("SyncStatusBadge", () => {
     expect(await screen.findByText(/^synced /i)).toBeInTheDocument();
   });
 
+  it.each([
+    { secs: 30, matcher: /synced \d+s ago/i, label: "30s → Xs ago" },
+    { secs: 5 * 60, matcher: /synced 5m ago/i, label: "5m → Xm ago" },
+    { secs: 2 * 3600, matcher: /synced 2h ago/i, label: "2h → Xh ago" },
+  ])(
+    "formatRelative: $label",
+    async ({ secs, matcher }) => {
+      // Each branch of formatRelative (just now / Xs / Xm / Xh) needs a
+      // dedicated lastPollAt — the default 'synced' test above only exercises
+      // the 'just now' branch (< 10s).
+      stub.fetch.mockImplementation(() =>
+        Promise.resolve(
+          jsonResponse({
+            lastPollAt: Date.now() - secs * 1000,
+            nextPollAt: null,
+            polling: false,
+            pendingTranscripts: 0,
+            errorsLast24h: 0,
+            lastError: null,
+            authRequired: false,
+          }),
+        ),
+      );
+      renderWithProviders(<SyncStatusBadge />);
+      expect(await screen.findByText(matcher)).toBeInTheDocument();
+    },
+  );
+
+  it("an SSE message triggers react-query invalidation for sync-status + recordings", async () => {
+    // Covers the onmessage handler body (SyncStatusBadge.tsx:32-33) which
+    // previous tests only exercised the onerror / mount / unmount paths of.
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: 100,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
+    );
+    renderWithProviders(<SyncStatusBadge />);
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+
+    const before = stub.fetch.mock.calls.length;
+    lastEventSource!.onmessage?.(new MessageEvent("message", { data: "{}" }));
+    // invalidateQueries triggers a re-fetch for BOTH keys; at least one fresh
+    // fetch call should land shortly after the SSE message arrives.
+    await waitFor(() =>
+      expect(stub.fetch.mock.calls.length).toBeGreaterThan(before),
+    );
+  });
+
+  it("an SSE error closes the stream (onerror handler)", async () => {
+    // Distinct from the unmount test — triggered by the EventSource errorring
+    // out (e.g. server restart) rather than React tearing the component down.
+    stub.fetch.mockImplementation(() =>
+      Promise.resolve(
+        jsonResponse({
+          lastPollAt: 100,
+          nextPollAt: null,
+          polling: false,
+          pendingTranscripts: 0,
+          errorsLast24h: 0,
+          lastError: null,
+          authRequired: false,
+        }),
+      ),
+    );
+    renderWithProviders(<SyncStatusBadge />);
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+
+    lastEventSource!.onerror?.(new Event("error"));
+    expect(lastEventSource!.close).toHaveBeenCalled();
+  });
+
   it("opens an EventSource to /api/sync/events on mount and closes it on unmount", async () => {
     stub.fetch.mockImplementation(() =>
       Promise.resolve(
