@@ -269,6 +269,7 @@ function writeRecordingFiles(recordingsDir: string, rec: SeedRecording): void {
   // <folder>/audio.ogg; without this file, Chromium's <audio> tag 404s and
   // the RecordingDetail page surfaces an unexpected console error. A clear
   // throw here beats a cryptic E2E failure deep inside Playwright.
+  /* v8 ignore next 7 -- defensive throw; silent.ogg is committed to the repo */
   if (!existsSync(silent)) {
     throw new Error(
       `seed: expected audio fixture at ${silent} but it's missing. ` +

@@ -46,16 +46,23 @@ function generateWavePath(
     raw.push(Math.abs(wave) * taper);
   }
 
-  // Smooth
+  // Smooth. The `?? 0` fallbacks guard against out-of-range indices; in
+  // practice the clamped `Math.max/min` keep them in-bounds, so the fallback
+  // arm is dead. v8 counts each `??` as a branch though, hence the hints.
   const smooth: number[] = [];
   for (let i = 0; i <= numPoints; i++) {
+    /* v8 ignore start -- ?? 0 is defensive; clamped indices never go OOB */
     const prev = raw[Math.max(0, i - 1)] ?? 0;
     const curr = raw[i] ?? 0;
     const next = raw[Math.min(numPoints, i + 1)] ?? 0;
+    /* v8 ignore stop */
     smooth.push((prev + curr * 2 + next) / 4);
   }
 
-  // Normalize to 0-1
+  // Normalize to 0-1. The `0.01` floor guards against an all-zero smooth
+  // array (would divide-by-zero) — that path is practically unreachable
+  // because `raw` layers three non-zero sine waves + random noise.
+  /* v8 ignore next -- 0.01 floor is only reached for an all-zero waveform */
   const maxVal = Math.max(...smooth, 0.01);
   const norm = smooth.map((v) => v / maxVal);
 
@@ -64,6 +71,7 @@ function generateWavePath(
   let topPath = `M 0 ${mid}`;
   for (let i = 0; i <= numPoints; i++) {
     const x = i * step;
+    /* v8 ignore next -- ?? 0 defensive; loop is bounded to norm's indices */
     const amp = (norm[i] ?? 0) * maxAmp;
     topPath += ` L ${x.toFixed(1)} ${(mid - amp).toFixed(1)}`;
   }
@@ -71,6 +79,7 @@ function generateWavePath(
   let bottomPath = "";
   for (let i = numPoints; i >= 0; i--) {
     const x = i * step;
+    /* v8 ignore next -- same defensive ?? 0; unreachable in normal paths */
     const amp = (norm[i] ?? 0) * maxAmp;
     bottomPath += ` L ${x.toFixed(1)} ${(mid + amp).toFixed(1)}`;
   }
@@ -90,9 +99,12 @@ export function Waveform({ recordingId, progress, onSeek }: WaveformProps): JSX.
     [recordingId],
   );
 
-  // Update gradient stops directly in the DOM for performance (no re-render)
+  // Update gradient stops directly in the DOM for performance (no re-render).
+  // Seven `stops[N]?` optional-chains each count as a branch; the null arm
+  // is dead because the <linearGradient> always renders seven <stop> children.
   useEffect(() => {
     const grad = gradRef.current;
+    /* v8 ignore next -- gradRef is always set after first render */
     if (!grad) return;
     const stops = grad.querySelectorAll("stop");
     const p = Math.max(0, Math.min(1, progress)) * 100;
@@ -102,6 +114,7 @@ export function Waveform({ recordingId, progress, onSeek }: WaveformProps): JSX.
     const brightEnd = Math.min(100, p + 1.5);
     const glowEnd = Math.min(100, p + 3.5);
 
+    /* v8 ignore next 7 -- 7 stops are always rendered; ?.setAttribute null arm is dead */
     stops[0]?.setAttribute("offset", "0%");
     stops[1]?.setAttribute("offset", `${glowStart}%`);
     stops[2]?.setAttribute("offset", `${brightStart}%`);
@@ -114,6 +127,7 @@ export function Waveform({ recordingId, progress, onSeek }: WaveformProps): JSX.
   const handleClick = useCallback(
     (e: React.MouseEvent<SVGSVGElement>) => {
       const svg = containerRef.current;
+      /* v8 ignore next -- containerRef is always set after first render */
       if (!svg) return;
       const rect = svg.getBoundingClientRect();
       const fraction = (e.clientX - rect.left) / rect.width;

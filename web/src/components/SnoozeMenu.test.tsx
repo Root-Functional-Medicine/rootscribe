@@ -87,6 +87,43 @@ describe("SnoozeMenu — custom date mode", () => {
     expect(picked.getMinutes()).toBe(59);
     expect(picked.getSeconds()).toBe(59);
   });
+
+  it("editing the date input updates the picked timestamp (onChange branch)", async () => {
+    // Covers the date input's onChange at SnoozeMenu.tsx:112 which the
+    // default-date flow above skips (it clicks Snooze without editing).
+    const onSelect = vi.fn();
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    // render() returns `container` for direct-node access cases like this —
+    // date inputs have no implicit role under the Testing Library query set,
+    // and `type=date` isn't an accessible-name selector either. Scoping to
+    // the render container keeps the query narrow and doesn't trigger the
+    // testing-library/no-node-access rule (container ref is the documented
+    // escape hatch for "role-less" form controls).
+    const { container } = render(
+      <SnoozeMenu onSelect={onSelect} onClose={vi.fn()} />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /pick a date/i }));
+    // date inputs have no implicit role; container query is the
+    // documented escape hatch for "role-less" form controls.
+    // eslint-disable-next-line testing-library/no-container, testing-library/no-node-access
+    const dateInput = container.querySelector<HTMLInputElement>(
+      "input[type='date']",
+    );
+    expect(dateInput).not.toBeNull();
+    // fireEvent rather than user.type — date inputs accept ISO strings via
+    // change events but are finicky with keystroke-simulated typing.
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.change(dateInput!, { target: { value: "2026-05-10" } });
+    expect(dateInput!.value).toBe("2026-05-10");
+
+    await user.click(screen.getByRole("button", { name: /^snooze$/i }));
+    const pickedDate = new Date(onSelect.mock.calls[0]![0]);
+    // Local-time end-of-day on 2026-05-10.
+    expect(pickedDate.getFullYear()).toBe(2026);
+    expect(pickedDate.getMonth()).toBe(4); // May (0-indexed)
+    expect(pickedDate.getDate()).toBe(10);
+  });
 });
 
 describe("SnoozeMenu — dismiss behaviors", () => {

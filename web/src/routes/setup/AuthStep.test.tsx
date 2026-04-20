@@ -519,6 +519,191 @@ describe("AuthStep — background watch via EventSource", () => {
   });
 });
 
+describe("AuthStep — uncovered branches", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+    lastEventSource = null;
+    installEventSourceStub();
+  });
+  afterEach(() => {
+    stub.cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("sets detect={error} when /api/auth/detect returns {found:false, error}", async () => {
+    // Hits the `else if (r.error)` branch in the detect useEffect: the
+    // response is not-found, but carries an error message (e.g. LevelDB
+    // unreadable, temp-dir out of space). Previous tests covered `found:true`
+    // + `found:false` without error, but not `found:false` + error populated.
+    routeAuthFetch(stub, {
+      detect: { found: false, error: "levelDB corrupted" },
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    expect(
+      await screen.findByText(/detect failed.*levelDB corrupted/i),
+    ).toBeInTheDocument();
+  });
+
+  it("sets detect={error} from the accept() catch when fetch itself rejects", async () => {
+    // Accept's try/catch: all existing tests cover ok=true and ok=false,
+    // where fetch resolves normally. Make fetch *reject* so the catch
+    // executes the `err instanceof Error ? err.message : String(err)` ternary.
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url.includes("/api/auth/detect"))
+        return Promise.resolve(
+          jsonResponse({
+            found: true,
+            browser: "Chrome",
+            profile: "Default",
+            token: "bearer-abc",
+          }),
+        );
+      if (url.includes("/api/auth/accept"))
+        return Promise.reject(new Error("fetch died"));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await user.click(
+      await screen.findByRole("button", { name: /use this session/i }),
+    );
+    expect(await screen.findByText(/detect failed.*fetch died/i)).toBeInTheDocument();
+  });
+
+  it("sets manual={error} from the submitManual() catch when fetch itself rejects", async () => {
+    // Same shape as above, but for the manual-paste flow's catch at
+    // AuthStep.tsx:90. Tests for ok=false cover resolved-but-rejected, this
+    // test covers true network failure.
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input) => {
+      const url = typeof input === "string" ? input : String(input);
+      if (url.includes("/api/auth/detect"))
+        return Promise.resolve(jsonResponse({ found: false }));
+      if (url.includes("/api/auth/accept"))
+        return Promise.reject(new Error("connection refused"));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByText(/no existing plaud session found/i);
+    await user.click(await screen.findByText(/paste a token manually/i));
+
+    await user.type(
+      screen.getByPlaceholderText(/bearer eyJ/i),
+      "bearer eyJ0000000000000000000000",
+    );
+    await user.click(screen.getByRole("button", { name: /use this token/i }));
+    expect(await screen.findByText(/connection refused/i)).toBeInTheDocument();
+  });
+
+  it("handles an SSE message with type=error by closing the stream and surfacing the error", async () => {
+    // Covers the third `else if (data.type === 'error')` branch at line 74:
+    // the existing tests cover type=found + type=timeout but not type=error.
+    const user = userEvent.setup();
+    routeAuthFetch(stub, {
+      detect: { found: false },
+      watch: { watchId: "w-err" },
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByText(/no existing plaud session found/i);
+    await user.click(
+      screen.getByRole("button", {
+        name: /open web\.plaud\.ai and watch for login/i,
+      }),
+    );
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+
+    await act(async () => {
+      lastEventSource!.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "error", message: "browser crashed" }),
+        }),
+      );
+    });
+    expect(await screen.findByText(/browser crashed/i)).toBeInTheDocument();
+    expect(lastEventSource!.close).toHaveBeenCalled();
+  });
+
+  it("swallows a malformed SSE payload (JSON.parse throws) without breaking the stream", async () => {
+    // The onmessage handler wraps JSON.parse + dispatch in a try/catch that
+    // intentionally swallows parse errors. Exercise it by dispatching a
+    // MessageEvent whose data isn't valid JSON.
+    const user = userEvent.setup();
+    routeAuthFetch(stub, {
+      detect: { found: false },
+      watch: { watchId: "w-bad" },
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByText(/no existing plaud session found/i);
+    await user.click(
+      screen.getByRole("button", {
+        name: /open web\.plaud\.ai and watch for login/i,
+      }),
+    );
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+
+    await act(async () => {
+      lastEventSource!.onmessage?.(
+        new MessageEvent("message", { data: "{not-json" }),
+      );
+    });
+
+    // Still in the "waiting" state — no terminal transition happened, but
+    // critically the component didn't crash.
+    expect(screen.getByText(/waiting for you to log in/i)).toBeInTheDocument();
+
+    // Clean teardown: dispatch a timeout event so the interval tears down.
+    await act(async () => {
+      lastEventSource!.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "timeout" }),
+        }),
+      );
+    });
+  });
+
+  it("ticks the elapsed seconds counter on interval fires while waiting", async () => {
+    // The 1-second `setInterval` in startWatch updates elapsedSec. Mix real
+    // timers (required by userEvent + EventSource-stub boot) with a brief
+    // real-time wait to let the interval actually fire once. 1.2s keeps
+    // total test runtime bounded while still exercising the tick branch.
+    const user = userEvent.setup();
+    routeAuthFetch(stub, {
+      detect: { found: false },
+      watch: { watchId: "w-tick" },
+    });
+    renderWithProviders(<AuthStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByText(/no existing plaud session found/i);
+    await user.click(
+      screen.getByRole("button", {
+        name: /open web\.plaud\.ai and watch for login/i,
+      }),
+    );
+    await waitFor(() => expect(lastEventSource).not.toBeNull());
+    // elapsedSec should start at 0.
+    expect(screen.getByText(/\(0s\)/)).toBeInTheDocument();
+
+    // Wait for at least one interval tick (every 1000ms). 1200ms gives
+    // enough headroom even on a slow CI runner, without stretching the
+    // whole suite meaningfully.
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 1_200));
+    });
+    // The counter bumped from 0 → 1 via the setInterval callback.
+    expect(screen.getByText(/\(1s\)/)).toBeInTheDocument();
+
+    // Tear down the stream so the interval doesn't leak to later tests.
+    await act(async () => {
+      lastEventSource!.onmessage?.(
+        new MessageEvent("message", {
+          data: JSON.stringify({ type: "timeout" }),
+        }),
+      );
+    });
+  }, 10_000);
+});
+
 describe("AuthStep — back navigation", () => {
   let stub: ReturnType<typeof stubFetch>;
   beforeEach(() => {

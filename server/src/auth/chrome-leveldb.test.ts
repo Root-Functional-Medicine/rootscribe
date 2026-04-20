@@ -314,3 +314,100 @@ describe("findToken — invalid JWT", () => {
     expect(r?.exp).toBeNull();
   });
 });
+
+describe("decodeValue — unknown encoding marker", () => {
+  it("falls back to UTF-8 decoding for a marker byte that is neither 0x00 nor 0x01", async () => {
+    // decodeValue is internal; exercise it via the full findToken path.
+    // Buffer starting with 0x02 (unknown marker) + ASCII content → falls
+    // through to `buf.toString('utf8')`. The utf8 text is the full 3-byte
+    // marker + "bearer eyJ..." payload. Since the unknown-marker branch
+    // does NOT strip the first byte, the resulting string starts with
+    // \u0002 which breaks the /^bearer/i match, so the fast-path bails.
+    // That still proves the branch was hit because no exception is thrown
+    // and the scanner falls through to the iterator.
+    const token = jwt({ iat: 777, exp: 888 });
+    const unknownMarkerBuf = Buffer.concat([
+      Buffer.from([0x02]),
+      Buffer.from(`bearer ${token}`, "utf8"),
+    ]);
+    vi.mocked(discoverProfiles).mockReturnValue([profile()]);
+    stage({
+      getImpl: () => unknownMarkerBuf,
+      // Also give the iterator a bearer-key so the scanner still finds a
+      // token — the direct-get returned a "\u0002bearer ..." string that
+      // doesn't start with "bearer" after stripping, so it falls through.
+      iterateKeys: [`PLADU_bob@example.com_bearer ${token}`],
+    });
+
+    const r = await findToken();
+    // Token recovered from the iterator fallback, proving decodeValue
+    // returned a UTF-8 string (didn't throw) even for the unknown marker.
+    expect(r?.token).toBe(token);
+  });
+});
+
+describe("copyProfileToTemp — LOCK filter", () => {
+  it("filters the LOCK file so cpSync skips Chrome's exclusive-lock sentinel", async () => {
+    // The global node:fs mock at the top of this file replaces cpSync with
+    // a vi.fn() that doesn't exercise the `filter` callback. To verify the
+    // filter logic we pluck it out of the mocked call args and invoke it
+    // directly with representative paths.
+    const { cpSync } = await import("node:fs");
+    const cpSyncMock = vi.mocked(cpSync);
+    cpSyncMock.mockClear();
+
+    const token = jwt({ iat: 1, exp: 2 });
+    vi.mocked(discoverProfiles).mockReturnValue([profile()]);
+    stage({ getImpl: () => utf16Value(`bearer ${token}`) });
+    await findToken();
+
+    // Last cpSync call was during this scan; its 3rd arg is the options
+    // object that carries the filter.
+    expect(cpSyncMock).toHaveBeenCalled();
+    const call = cpSyncMock.mock.calls[cpSyncMock.mock.calls.length - 1]!;
+    const opts = call[2] as { filter?: (src: string, dest: string) => boolean };
+    expect(opts.filter).toBeDefined();
+    const filter = opts.filter!;
+
+    // POSIX LOCK: skipped (covers the second `.endsWith('/LOCK')` clause).
+    // Anything else: kept. (The `${path.sep}LOCK` clause is POSIX-sep on
+    // this runner — it's identical to '/LOCK' — but on Windows runners it
+    // would check '\\LOCK' and fire first.)
+    expect(filter("/tmp/src/LOCK", "/tmp/dst/LOCK")).toBe(false);
+    expect(filter("/tmp/src/000001.ldb", "/tmp/dst/000001.ldb")).toBe(true);
+    expect(filter("/tmp/src/MANIFEST-000001", "/tmp/dst/MANIFEST-000001")).toBe(true);
+  });
+});
+
+describe("findToken — outer catch swallows a scanProfile throw", () => {
+  it("logs and keeps going when scanProfile itself throws (not a LevelDB open error)", async () => {
+    // Distinct from the 'broken-profile' test above: there, ClassicLevel.open
+    // rejects and is caught INSIDE scanProfile (the inner try/catch). Here
+    // we make copyProfileToTemp throw — which bubbles past all of
+    // scanProfile's try blocks — so the outer for-loop's catch in
+    // findToken itself has to absorb it.
+    const token = jwt({ iat: 1, exp: 2 });
+    vi.mocked(discoverProfiles).mockReturnValue([
+      profile({ profile: "Throws", leveldbPath: "/throws" }),
+      profile({ profile: "Good", leveldbPath: "/good" }),
+    ]);
+
+    const { mkdtempSync } = await import("node:fs");
+    const mkdtempSyncMock = vi.mocked(mkdtempSync);
+    let call = 0;
+    mkdtempSyncMock.mockImplementation((prefix) => {
+      call += 1;
+      if (call === 1) throw new Error("ENOSPC: out of disk");
+      return `${prefix}ok-${call}`;
+    });
+
+    // Only the 2nd profile reaches the DB constructor. Stage it to succeed.
+    stage({ getImpl: () => utf16Value(`bearer ${token}`) });
+
+    const r = await findToken();
+    expect(r?.token).toBe(token);
+    expect(r?.profile).toBe("Good");
+
+    mkdtempSyncMock.mockReset();
+  });
+});

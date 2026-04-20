@@ -235,6 +235,38 @@ describe("fireWebhookForRecording — payload construction", () => {
       summary_markdown: null,
     });
   });
+
+  it("transcript_ready: files that exist but throw on read → content field is null (readIfExists catch)", async () => {
+    // The empty string as `readFileSync` return masks the readIfExists catch
+    // path, since existsSync is true but readFileSync succeeds. To exercise
+    // the inner catch, create the files but make readFileSync throw by
+    // pointing at a path that exists-as-a-directory (readFileSync EISDIR).
+    const folder = "2026-04-11_eisdir__xyz";
+    const folderAbs = path.join(recordingsDir, folder);
+    mkdirSync(folderAbs, { recursive: true });
+    // Create transcript.txt and summary.md AS DIRECTORIES so existsSync
+    // returns true (buildPayload's first check) but readFileSync throws
+    // EISDIR — which the catch block must swallow. Content fields should
+    // still come back null.
+    mkdirSync(path.join(folderAbs, "transcript.txt"), { recursive: true });
+    mkdirSync(path.join(folderAbs, "summary.md"), { recursive: true });
+
+    const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ok = await fireWebhookForRecording(
+      "transcript_ready",
+      makeRow({ folder }),
+    );
+    expect(ok).toBe(true);
+    const body = JSON.parse(
+      String((fetchMock.mock.calls[0]![1] as RequestInit).body),
+    );
+    expect(body.content).toEqual({
+      transcript_text: null,
+      summary_markdown: null,
+    });
+  });
 });
 
 describe("fireWebhookForRecording — retry + backoff", () => {
