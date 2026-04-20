@@ -5,19 +5,11 @@ import type { AppConfig } from "@rootscribe/shared";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { JiraStep } from "./JiraStep.js";
 import { jsonResponse, renderWithProviders, stubFetch } from "../../test-utils.js";
+import { appConfigFactory } from "../../test-factories/index.js";
 
 // JiraStep composes:
 // - GET /api/config (seed the input from cfg.data.config.jiraBaseUrl)
 // - POST /api/config (save jiraBaseUrl, invalidate ["config"])
-
-function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    tokenEmail: "alice@example.com",
-    setupComplete: false,
-    ...overrides,
-  };
-}
 
 function routeJiraFetch(
   stub: ReturnType<typeof stubFetch>,
@@ -42,7 +34,7 @@ function routeJiraFetch(
         );
       }
       return Promise.resolve(
-        jsonResponse({ config: opts.config ?? makeConfig() }),
+        jsonResponse({ config: opts.config ?? appConfigFactory.build() }),
       );
     }
     if (url === "/api/config" && method === "POST") {
@@ -54,7 +46,7 @@ function routeJiraFetch(
           }),
         );
       }
-      return Promise.resolve(jsonResponse({ config: opts.config ?? makeConfig() }));
+      return Promise.resolve(jsonResponse({ config: opts.config ?? appConfigFactory.build() }));
     }
     return Promise.resolve(jsonResponse({}));
   });
@@ -77,7 +69,7 @@ describe("JiraStep — seed from config", () => {
 
   it("seeds the URL input from the loaded config", async () => {
     routeJiraFetch(stub, {
-      config: makeConfig({
+      config: appConfigFactory.build({
         jiraBaseUrl: "https://acme.atlassian.net/browse/",
       }),
     });
@@ -113,7 +105,7 @@ describe("JiraStep — live preview", () => {
 
   it("renders a DEVX-96 preview that normalizes trailing slashes on the input", async () => {
     const user = userEvent.setup();
-    routeJiraFetch(stub, { config: makeConfig({ jiraBaseUrl: "" }) });
+    routeJiraFetch(stub, { config: appConfigFactory.build({ jiraBaseUrl: "" }) });
     renderWithProviders(<JiraStep onNext={vi.fn()} onBack={vi.fn()} />);
     const input = await screen.findByPlaceholderText(
       DEFAULT_CONFIG.jiraBaseUrl,
@@ -128,7 +120,7 @@ describe("JiraStep — live preview", () => {
   it("shows 'Use RFM default' only when the URL differs from DEFAULT_CONFIG.jiraBaseUrl; click restores the default", async () => {
     const user = userEvent.setup();
     routeJiraFetch(stub, {
-      config: makeConfig({ jiraBaseUrl: "https://other.example/browse/" }),
+      config: appConfigFactory.build({ jiraBaseUrl: "https://other.example/browse/" }),
     });
     renderWithProviders(<JiraStep onNext={vi.fn()} onBack={vi.fn()} />);
     await screen.findByDisplayValue("https://other.example/browse/");
@@ -156,7 +148,7 @@ describe("JiraStep — save + navigation", () => {
   it("Next POSTs the trimmed URL and calls onNext on success", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();
-    routeJiraFetch(stub, { config: makeConfig({ jiraBaseUrl: "" }) });
+    routeJiraFetch(stub, { config: appConfigFactory.build({ jiraBaseUrl: "" }) });
     renderWithProviders(<JiraStep onNext={onNext} onBack={vi.fn()} />);
     const input = await screen.findByPlaceholderText(
       DEFAULT_CONFIG.jiraBaseUrl,
@@ -187,7 +179,7 @@ describe("JiraStep — save + navigation", () => {
   it("blank URL falls back to DEFAULT_CONFIG.jiraBaseUrl on save", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();
-    routeJiraFetch(stub, { config: makeConfig({ jiraBaseUrl: "" }) });
+    routeJiraFetch(stub, { config: appConfigFactory.build({ jiraBaseUrl: "" }) });
     renderWithProviders(<JiraStep onNext={onNext} onBack={vi.fn()} />);
     const input = await screen.findByPlaceholderText(
       DEFAULT_CONFIG.jiraBaseUrl,
@@ -213,7 +205,7 @@ describe("JiraStep — save + navigation", () => {
     const user = userEvent.setup();
     const onNext = vi.fn();
     routeJiraFetch(stub, {
-      config: makeConfig({ jiraBaseUrl: "" }),
+      config: appConfigFactory.build({ jiraBaseUrl: "" }),
       save: "throw",
     });
     renderWithProviders(<JiraStep onNext={onNext} onBack={vi.fn()} />);
@@ -230,7 +222,7 @@ describe("JiraStep — save + navigation", () => {
   it("Back button calls onBack", async () => {
     const user = userEvent.setup();
     const onBack = vi.fn();
-    routeJiraFetch(stub, { config: makeConfig() });
+    routeJiraFetch(stub, { config: appConfigFactory.build() });
     renderWithProviders(<JiraStep onNext={vi.fn()} onBack={onBack} />);
     await user.click(screen.getByRole("button", { name: /^back$/i }));
     expect(onBack).toHaveBeenCalledTimes(1);

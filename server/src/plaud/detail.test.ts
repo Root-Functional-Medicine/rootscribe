@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FileDetailData, FileDetailResponse } from "./detail.js";
+import { fileDetailDataFactory } from "../test-factories/index.js";
 
 const plaudJsonMock = vi.hoisted(() => vi.fn());
 
@@ -10,38 +11,7 @@ vi.mock("./client.js", () => ({
 const { getFileDetail } = await import("./detail.js");
 
 function makeData(overrides: Partial<FileDetailData> = {}): FileDetailData {
-  // Mirror the full FileDetailData shape so nothing downstream trips on a
-  // partial mock (see testing-anti-patterns: incomplete mocks).
-  return {
-    file_id: "abc123",
-    file_name: "2026-04-18 meeting",
-    file_version: 1,
-    duration: 120,
-    is_trash: false,
-    start_time: 1_775_000_000_000,
-    scene: 0,
-    serial_number: "SN-001",
-    session_id: 42,
-    filetag_id_list: [],
-    content_list: [
-      {
-        data_id: "t1",
-        data_type: "transaction",
-        task_status: 2,
-        err_code: "",
-        err_msg: "",
-        data_title: "Transcript",
-        data_tab_name: "trans",
-        data_link: "https://s3.example/t1.json",
-      },
-    ],
-    embeddings: {},
-    download_path_mapping: {},
-    pre_download_content_list: [],
-    extra_data: null,
-    has_thought_partner: false,
-    ...overrides,
-  };
+  return fileDetailDataFactory.build(overrides);
 }
 
 function makeResponse(data: FileDetailData): FileDetailResponse {

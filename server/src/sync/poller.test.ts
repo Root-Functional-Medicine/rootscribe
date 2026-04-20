@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaudRawRecording, RecordingRow } from "@rootscribe/shared";
+import {
+  plaudRawRecordingFactory,
+  recordingRowFactory,
+} from "@rootscribe/shared/test-factories";
 
 // ---------- Mocks ----------
 // Mock every upstream the poller touches. `loadConfig` stays controllable
@@ -102,25 +106,35 @@ const { emit } = await import("./events.js");
 
 // ---------- Fixture helpers ----------
 
-function makePlaudItem(id: string, overrides: Partial<PlaudRawRecording> = {}): PlaudRawRecording {
-  return {
+// Upstream Plaud items in the poller tests model the "not yet transcribed"
+// starting state — new recordings come in as pending, and poller.test covers
+// transitions from there. start/end are in SECONDS for this test (poller.ts
+// accepts either per its normalization logic). .withoutTranscript() sets
+// is_trans/is_summary: false to match that starting state.
+function makePlaudItem(
+  id: string,
+  overrides: Partial<PlaudRawRecording> = {},
+): PlaudRawRecording {
+  return plaudRawRecordingFactory.withoutTranscript().build({
     id,
     filename: `${id}.ogg`,
     start_time: 1_700_000_000,
     end_time: 1_700_000_060,
     filesize: 1024,
-    sn: "SN1",
-    is_trash: 0,
-    is_historical: 0,
-    is_trans: false,
-    trans_status: 0,
+    serial_number: "SN1",
     duration: 60,
     ...overrides,
-  } as PlaudRawRecording;
+  });
 }
 
-function makeRow(id: string, overrides: Partial<RecordingRow> = {}): RecordingRow {
-  return {
+// Rows in the poller tests start in `pending_audio` — that's the upsert
+// state just after a new PlaudRawRecording lands, before the audio file
+// has been downloaded.
+function makeRow(
+  id: string,
+  overrides: Partial<RecordingRow> = {},
+): RecordingRow {
+  return recordingRowFactory.pendingAudio().build({
     id,
     filename: `${id}.ogg`,
     startTime: 1_700_000_000_000,
@@ -130,25 +144,8 @@ function makeRow(id: string, overrides: Partial<RecordingRow> = {}): RecordingRo
     serialNumber: "SN1",
     folder: `2026-04-11_${id}__${id}`,
     audioPath: "audio.ogg",
-    transcriptPath: null,
-    summaryPath: null,
-    metadataPath: null,
-    audioDownloadedAt: null,
-    transcriptDownloadedAt: null,
-    webhookAudioFiredAt: null,
-    webhookTranscriptFiredAt: null,
-    isTrash: false,
-    isHistorical: false,
-    lastError: null,
-    status: "pending_audio",
-    inboxStatus: "new",
-    effectiveInboxStatus: "new",
-    category: null,
-    snoozedUntil: null,
-    reviewedAt: null,
-    tags: [],
     ...overrides,
-  };
+  });
 }
 
 type PlaudListResponse = Awaited<ReturnType<typeof listRecordings>>;

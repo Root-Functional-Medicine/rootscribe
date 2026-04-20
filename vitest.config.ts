@@ -41,6 +41,12 @@ export default defineConfig({
         // Web entrypoint mounts React; covered by Playwright.
         "web/src/main.tsx",
         "web/src/App.tsx",
+        // Test-factory modules are test support, not production code. Every
+        // factory line is exercised by the specs that call it, but counting
+        // rarely-used traits toward production coverage would create
+        // pressure to inline factories or delete traits to move the
+        // percentage — the opposite of DEVX-104's intent.
+        "**/test-factories/**",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
       // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #7 final push):

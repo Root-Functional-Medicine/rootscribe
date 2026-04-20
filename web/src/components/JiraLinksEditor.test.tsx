@@ -1,36 +1,37 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { JiraLink } from "@rootscribe/shared";
-import { JiraLinksEditor } from "./JiraLinksEditor.js";
 import {
-  jsonResponse,
-  makeInboxMutationResponse as mutationResponse,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+  inboxMutationResponseFactory,
+  jiraLinkFactory,
+} from "@rootscribe/shared/test-factories";
+import { JiraLinksEditor } from "./JiraLinksEditor.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import { appConfigFactory } from "../test-factories/index.js";
 
 function configResponse(jiraBaseUrl: string): Response {
   return jsonResponse({
-    config: {
-      setupComplete: true,
-      token: "t",
-      recordingsDir: "/tmp",
-      pollIntervalMinutes: 10,
-      jiraBaseUrl,
-      webhook: null,
-      bind: { host: "127.0.0.1", port: 44471 },
-    },
+    config: appConfigFactory.setupComplete().withJiraBaseUrl(jiraBaseUrl).build(),
   });
 }
 
-const ROOT_101: JiraLink = {
+const mutationResponse = inboxMutationResponseFactory.build.bind(
+  inboxMutationResponseFactory,
+);
+
+// ROOT-101 — the canonical link most tests render. id:1/createdAt:1 match the
+// older hand-rolled constant so fixtures that compare rendered text or ordering
+// don't shift. issueUrl is set EXPLICITLY (not inherited from the factory's
+// sequence-derived default) because this constant is built at module scope:
+// if another file in the same Vitest worker has already used the factory, the
+// sequence counter could advance and the default issueUrl would drift to
+// e.g. .../ROOT-107, mismatching the issueKey we pinned here.
+const ROOT_101 = jiraLinkFactory.build({
   id: 1,
   issueKey: "ROOT-101",
   issueUrl: "https://example.atlassian.net/browse/ROOT-101",
-  relation: "created_from",
   createdAt: 1,
-};
+});
 
 describe("JiraLinksEditor — rendering existing links", () => {
   let stub: ReturnType<typeof stubFetch>;

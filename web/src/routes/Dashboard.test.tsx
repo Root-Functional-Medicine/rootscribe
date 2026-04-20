@@ -2,67 +2,28 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { RecordingRow, RecordingsListResponse } from "@rootscribe/shared";
+import { recordingDetailFactory } from "@rootscribe/shared/test-factories";
 import { Dashboard } from "./Dashboard.js";
-import {
-  jsonResponse,
-  makeRecordingDetail,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import { recordingsListResponseFactory } from "../test-factories/index.js";
 
 // Dashboard composes the listRecordings query + the facets query + a sync
 // trigger mutation. Every test goes through the REAL jsonFetch → fetch
 // pipeline via a stubbed global.fetch so we exercise query-string building
 // and response parsing. The only thing we stub is the network boundary.
 
+// RecordingRow is a structural subset of RecordingDetail, so the shared
+// recordingDetailFactory satisfies RecordingRow[] at the type level — no need
+// for a separate row factory or a hand-rolled projection.
 function makeRow(overrides: Partial<RecordingRow> = {}): RecordingRow {
-  // RecordingRow is a subset of RecordingDetail — the same default shape is
-  // structurally valid here, so we reuse makeRecordingDetail and strip the
-  // detail-only fields Dashboard never touches.
-  const d = makeRecordingDetail(overrides);
-  const row: RecordingRow = {
-    id: d.id,
-    filename: d.filename,
-    startTime: d.startTime,
-    endTime: d.endTime,
-    durationMs: d.durationMs,
-    filesizeBytes: d.filesizeBytes,
-    serialNumber: d.serialNumber,
-    folder: d.folder,
-    audioPath: d.audioPath,
-    transcriptPath: d.transcriptPath,
-    summaryPath: d.summaryPath,
-    metadataPath: d.metadataPath,
-    audioDownloadedAt: d.audioDownloadedAt,
-    transcriptDownloadedAt: d.transcriptDownloadedAt,
-    webhookAudioFiredAt: d.webhookAudioFiredAt,
-    webhookTranscriptFiredAt: d.webhookTranscriptFiredAt,
-    isTrash: d.isTrash,
-    isHistorical: d.isHistorical,
-    lastError: d.lastError,
-    status: d.status,
-    inboxStatus: d.inboxStatus,
-    effectiveInboxStatus: d.effectiveInboxStatus,
-    category: d.category,
-    snoozedUntil: d.snoozedUntil,
-    reviewedAt: d.reviewedAt,
-    tags: d.tags,
-  };
-  return row;
+  return recordingDetailFactory.build(overrides);
 }
 
 function listResponse(
   items: RecordingRow[],
   extras: Partial<Omit<RecordingsListResponse, "items">> = {},
 ): RecordingsListResponse {
-  return {
-    total: items.length,
-    items,
-    totalBytes: items.reduce((a, r) => a + r.filesizeBytes, 0),
-    availableTags: [],
-    availableCategories: [],
-    ...extras,
-  };
+  return recordingsListResponseFactory.withItems(...items).build(extras);
 }
 
 // Route the two Dashboard queries by URL. The `facets` query has `facets=1`

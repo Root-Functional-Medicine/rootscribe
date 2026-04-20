@@ -7,13 +7,10 @@ import type {
   RecordingDetailResponse,
 } from "@rootscribe/shared";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
+import { recordingDetailFactory } from "@rootscribe/shared/test-factories";
 import { RecordingDetailPage } from "./RecordingDetail.js";
-import {
-  jsonResponse,
-  makeRecordingDetail,
-  renderWithProviders,
-  stubFetch,
-} from "../test-utils.js";
+import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import { recordingDetailResponseFactory } from "../test-factories/index.js";
 
 // RecordingDetailPage is a ~660-LOC component that composes the detail query
 // + delete mutation + audio player + transcript parser/search + summary
@@ -30,13 +27,9 @@ function detailResponse(
   overrides: Partial<RecordingDetail> = {},
   extras: Partial<Omit<RecordingDetailResponse, "recording">> = {},
 ): RecordingDetailResponse {
-  return {
-    recording: makeRecordingDetail(overrides),
-    mediaBase: "/media/rec-1",
-    availableTags: [],
-    availableCategories: [],
-    ...extras,
-  };
+  return recordingDetailResponseFactory
+    .withRecording(recordingDetailFactory.build(overrides))
+    .build(extras);
 }
 
 // Render RecordingDetailPage under a route that supplies `id` via useParams,
@@ -92,7 +85,7 @@ function routeDetailFetch(
     if (url.startsWith("/api/recordings/")) {
       return Promise.resolve(
         jsonResponse({
-          recording: opts.detail?.recording ?? makeRecordingDetail(),
+          recording: opts.detail?.recording ?? recordingDetailFactory.build(),
           availableTags: [],
           availableCategories: [],
         }),

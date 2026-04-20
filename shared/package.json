@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./test-factories": {
+      "types": "./dist/test-factories/index.d.ts",
+      "default": "./dist/test-factories/index.js"
     }
   },
   "scripts": {
@@ -17,6 +21,7 @@
     "clean": "rm -rf dist"
   },
   "devDependencies": {
+    "fishery": "^2.4.0",
     "typescript": "^6.0.3"
   }
 }

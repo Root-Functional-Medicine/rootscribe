@@ -2,20 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AppConfig } from "@rootscribe/shared";
-import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { ReviewStep } from "./ReviewStep.js";
 import { jsonResponse, renderWithProviders, stubFetch } from "../../test-utils.js";
+import { appConfigFactory } from "../../test-factories/index.js";
 
+// ReviewStep lands users at the end of the wizard with recordingsDir already
+// chosen — the factory's `.withRecordingsDir(...)` trait captures that
+// starting state. Explicit field tweaks (webhook, jiraBaseUrl, bind, poll)
+// flow through via build overrides.
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
-  return {
-    ...DEFAULT_CONFIG,
-    tokenEmail: "alice@example.com",
-    recordingsDir: "/srv/recordings",
-    pollIntervalMinutes: 10,
-    bind: { host: "127.0.0.1", port: 44471 },
-    setupComplete: false,
-    ...overrides,
-  };
+  return appConfigFactory
+    .withRecordingsDir("/srv/recordings")
+    .build(overrides);
 }
 
 function routeReviewFetch(
