@@ -38,11 +38,29 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
   if (baseline) baselineTokens.add(baseline.token);
 
   const listeners = new Set<Listener>();
-  let done = false;
-  let lastEvent: WatchEvent | null = null;
+
+  let heartbeatTimer: NodeJS.Timeout | null = null;
+  let pollTimer: NodeJS.Timeout | null = null;
+  let timeoutTimer: NodeJS.Timeout | null = null;
+  let cleanupTimer: NodeJS.Timeout | null = null;
+
+  // Declare the watch object BEFORE emit()/stop()/poll() so those closures
+  // can mutate `watch.lastEvent` / `watch.done` directly. Previously the
+  // closures updated local `let` bindings while the watch object held a
+  // stale snapshot, so subscribeWatch's lastEvent-replay never saw any
+  // events emitted before the subscriber joined.
+  const watch: Watch = {
+    id,
+    startedAt,
+    listeners,
+    stop: () => undefined,
+    done: false,
+    lastEvent: null,
+    baselineTokens,
+  };
 
   const emit = (e: WatchEvent): void => {
-    lastEvent = e;
+    watch.lastEvent = e;
     for (const l of listeners) {
       try {
         l(e);
@@ -52,17 +70,23 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     }
   };
 
-  let heartbeatTimer: NodeJS.Timeout | null = null;
-  let pollTimer: NodeJS.Timeout | null = null;
-  let timeoutTimer: NodeJS.Timeout | null = null;
-
   const stop = (): void => {
-    if (done) return;
-    done = true;
+    if (watch.done) return;
+    watch.done = true;
     if (heartbeatTimer) clearInterval(heartbeatTimer);
     if (pollTimer) clearInterval(pollTimer);
     if (timeoutTimer) clearTimeout(timeoutTimer);
+    // Schedule cleanup 30s from NOW (not TIMEOUT_MS + 30s from start) so a
+    // watch that stops early — e.g., user logs in at second 10 — doesn't
+    // hold a phantom entry in the `watches` map for the full 5.5 minutes.
+    // Also tracked via `cleanupTimer` so a re-stop can't double-schedule.
+    if (!cleanupTimer) {
+      cleanupTimer = setTimeout(() => {
+        watches.delete(id);
+      }, 30_000);
+    }
   };
+  watch.stop = stop;
 
   const poll = async (): Promise<void> => {
     try {
@@ -76,29 +100,20 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
     }
   };
 
-  const watch: Watch = {
-    id,
-    startedAt,
-    listeners,
-    stop,
-    done,
-    lastEvent,
-    baselineTokens,
-  };
   watches.set(id, watch);
 
   // Heartbeat "waiting" events for the UI.
   heartbeatTimer = setInterval(() => {
-    if (done) return;
+    if (watch.done) return;
     emit({ type: "waiting", elapsedMs: Date.now() - startedAt });
   }, HEARTBEAT_INTERVAL_MS);
 
   pollTimer = setInterval(() => {
-    if (!done) void poll();
+    if (!watch.done) void poll();
   }, POLL_INTERVAL_MS);
 
   timeoutTimer = setTimeout(() => {
-    if (!done) {
+    if (!watch.done) {
       emit({ type: "timeout" });
       stop();
     }
@@ -118,16 +133,17 @@ export async function startBrowserWatch(openBrowser = true): Promise<string> {
   // Fire an immediate poll so we don't wait the full interval.
   void poll();
 
-  // Schedule cleanup 30 s after finish so late subscribers can still fetch the last event.
-  setTimeout(
-    () => {
-      watches.delete(id);
-    },
-    TIMEOUT_MS + 30_000,
-  );
+  // Cleanup is scheduled lazily inside stop() — 30s after the watch
+  // actually finishes, so late subscribers can still fetch the last
+  // event without phantom entries accumulating when users start/stop
+  // watches repeatedly.
 
   return id;
 }
+
+// Listener type exported so SSE consumers (routes/auth) and tests can
+// reference the same shape the module emits.
+export type { Listener };
 
 export function subscribeWatch(id: string, listener: Listener): (() => void) | null {
   const w = watches.get(id);
