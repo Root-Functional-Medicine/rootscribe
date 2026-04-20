@@ -1,7 +1,6 @@
 import { Factory } from "fishery";
 import { vi } from "vitest";
 import type { ComponentProps } from "react";
-import type { RecordingsListFilter } from "@rootscribe/shared";
 import { InboxFilters } from "../components/InboxFilters.js";
 
 // Factory for InboxFilters component props. Only used in
@@ -17,7 +16,7 @@ import { InboxFilters } from "../components/InboxFilters.js";
 export type InboxFiltersProps = ComponentProps<typeof InboxFilters>;
 
 class InboxFiltersPropsFactory extends Factory<InboxFiltersProps> {
-  withFilter(filter: RecordingsListFilter): this {
+  withFilter(filter: InboxFiltersProps["filter"]): this {
     return this.params({ filter }) as this;
   }
 
@@ -39,8 +38,13 @@ class InboxFiltersPropsFactory extends Factory<InboxFiltersProps> {
 }
 
 export const inboxFiltersPropsFactory = InboxFiltersPropsFactory.define(
+  // `as const` preserves the "all" literal through Fishery's `.define()`
+  // inference (which otherwise widens string literals to `string`). Unlike
+  // `as RecordingsListFilter` this stays type-safe if the union ever loses
+  // "all" — TypeScript would fail here because literal "all" wouldn't
+  // match the narrowed union anymore.
   () => ({
-    filter: "all" as RecordingsListFilter,
+    filter: "all" as const,
     onFilterChange: vi.fn(),
     category: "",
     onCategoryChange: vi.fn(),
