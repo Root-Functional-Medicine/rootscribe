@@ -43,27 +43,27 @@ export default defineConfig({
         "web/src/App.tsx",
         // (Tailwind 4 is CSS-first — no JS config files to exclude.)
       ],
-      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #6):
-      // 88.54% lines, 77.39% branches, 89.27% functions, 86.60% statements.
-      // Ratchet #6 covered every remaining 0%-covered server-infra file
-      // plus the inbox-mcp platform branches: webhook/post (retry +
-      // backoff), routes/auth (supertest + SSE via real HTTP server),
-      // auth/chrome-leveldb (mocked classic-level + fs), auth/browser-
-      // watch (mocked findToken + open + fake timers), sync/poller (all
-      // dependencies mocked for pagination + error classification + retry
-      // flows), and platform-branch coverage of inbox-mcp/paths.
-      // 90 new tests; functions cleared 89%, lines cleared 88%, and
-      // statements cleared 86%. Thresholds remain below achieved coverage,
-      // with the largest headroom on branches and functions (~1.3–1.4
-      // points) and the tightest on lines (~0.5 points). DEVX-102 target
-      // (95% every axis) is now within one more ratchet — remaining
-      // coverage gaps are the "hard to hit" db error branches (schema
-      // check, file-read fallbacks).
+      // Baseline (Apr 2026, Vitest 4, post-DEVX-102 ratchet #7):
+      // 94.53% lines, 82.75% branches, 93.37% functions, 92.47% statements.
+      // Ratchet #7 is the final tightening: plaud/client (0% → 100%),
+      // plaud/transcript (28% → 100%), routes/config /test-webhook +
+      // /validate-recordings-dir + /complete-setup branches, server
+      // paths.ts + inbox-mcp db.ts platform + file-read branches.
+      // 68 new tests.
+      //
+      // Three axes (lines / functions / statements) are very close to the
+      // 95% target — ~0.5–2.5 pts headroom each. Branches remains the
+      // laggard at 82.75% because the hardest-to-hit branches are
+      // WSL-specific (profiles.ts wslWindowsUsernames), SVG-geometry
+      // fallbacks (Waveform.tsx path generation), and heavy-mock
+      // coverage-gap cases that need dedicated follow-up. Thresholds sit
+      // ~0.5 pts below achieved on every axis. DEVX-102 stays open for
+      // one more small pass on branches after merge.
       thresholds: {
-        lines: 88,
-        functions: 88,
-        branches: 76,
-        statements: 86,
+        lines: 94,
+        functions: 93,
+        branches: 82,
+        statements: 92,
       },
     },
   },
