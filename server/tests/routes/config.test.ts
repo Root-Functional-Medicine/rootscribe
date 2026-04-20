@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import request from "supertest";
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
 
@@ -277,37 +277,49 @@ describe("POST /api/config/validate-recordings-dir", () => {
     expect(res.body.absolutePath).toBe(path.resolve(freshDir));
   });
 
-  it("returns ok=false when mkdirSync can't create the path (e.g. permission denied)", async () => {
-    // Target an unwritable path: /proc/nonexistent-root on Linux / root-
-    // owned dir on mac. Use an empty-string root-looking path that
-    // mkdir-recursive will fail on cross-platform.
-    const impossible = path.join("/", "this-should-not-exist-rsqlite", "x", "y");
+  it("returns ok=false when the path can't be created (ENOTDIR: target is inside a regular file)", async () => {
+    // Fully sandboxed failure case: create a REGULAR file, then ask the
+    // route to create a directory INSIDE it. mkdir-recursive fails with
+    // ENOTDIR on every platform and every user (including root in CI
+    // containers), and nothing gets written outside the suite's temp dir.
+    //
+    // Previously used a root-level path ("/this-should-not-exist…") which
+    // can succeed in privileged CI containers, leaving stray directories
+    // under "/" that the test doesn't clean up — Copilot flagged this in
+    // PR #14 review.
+    mkdirSync(testDirRoot, { recursive: true });
+    const blockerFile = path.join(testDirRoot, "blocker-file");
+    writeFileSync(blockerFile, "not a directory");
+    const impossible = path.join(blockerFile, "subdir");
+
     const res = await request(app)
       .post("/api/config/validate-recordings-dir")
       .send({ path: impossible });
-    // On some platforms the mkdir succeeds if we're root; if it does, the
-    // ok=true branch is fine and still exercises the happy path. Either
-    // way this test shouldn't throw a server-side 500.
-    expect([200]).toContain(res.status);
-    expect(typeof res.body.ok).toBe("boolean");
+
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.exists).toBe(false);
+    expect(res.body.error).toMatch(/cannot create/i);
   });
 
   it("resolves relative paths to absolutes", async () => {
+    // Compute a relative path from process.cwd() into this suite's temp
+    // sandbox. That way any directory the route creates lands under
+    // testDirRoot (which afterEach rmSyncs), NOT in the repo root or
+    // process.cwd() — where a raw "./relative-doesnt-matter" would land
+    // and could collide with real project state. Copilot flagged the
+    // original version in PR #14 review.
+    mkdirSync(testDirRoot, { recursive: true });
+    const sandboxedDir = path.join(testDirRoot, "relative-resolve-target");
+    const relativeDir = path.relative(process.cwd(), sandboxedDir);
+
     const res = await request(app)
       .post("/api/config/validate-recordings-dir")
-      .send({ path: "./relative-doesnt-matter" });
-    expect(res.body.absolutePath).toBe(
-      path.resolve("./relative-doesnt-matter"),
-    );
-    // Clean up the directory if the route created one.
-    try {
-      rmSync(path.resolve("./relative-doesnt-matter"), {
-        recursive: true,
-        force: true,
-      });
-    } catch {
-      /* ignore */
-    }
+      .send({ path: relativeDir });
+
+    expect(res.body.absolutePath).toBe(path.resolve(relativeDir));
+    // testDirRoot's afterEach rmSync clears whatever the route wrote under
+    // the sandbox — no per-test cleanup needed beyond the suite hook.
   });
 });
 
