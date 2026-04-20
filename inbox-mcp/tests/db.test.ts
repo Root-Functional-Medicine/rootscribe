@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
@@ -39,6 +39,8 @@ const {
   unlinkJira,
   unnotifiedNew,
   unsnooze,
+  readTranscriptText,
+  readSummaryMarkdown,
 } = await import("../src/db.js");
 
 describe("inbox-mcp db", () => {
@@ -308,6 +310,78 @@ describe("inbox-mcp db", () => {
       seedRecording(dbFile, { id: "a", filename: "a", folder: "f" });
       markNotified("a");
       expect(unnotifiedNew()).toHaveLength(0);
+    });
+  });
+
+  describe("readTranscriptText", () => {
+    // Helper: build a fake recording row with on-disk transcript fixtures.
+    // transcript_path in DB points at the .json; the human-readable .txt
+    // lives next to it (readTranscriptText derives the sibling path).
+    function fixture(dir: string, transcriptText: string | null): {
+      row: { transcript_path: string | null };
+      txtPath: string;
+    } {
+      const folder = path.join(tmpRoot, dir);
+      mkdirSync(folder, { recursive: true });
+      const jsonPath = path.join(folder, "transcript.json");
+      const txtPath = path.join(folder, "transcript.txt");
+      writeFileSync(jsonPath, "{}");
+      if (transcriptText !== null) writeFileSync(txtPath, transcriptText);
+      return {
+        row: { transcript_path: jsonPath },
+        txtPath,
+      };
+    }
+
+    it("returns null when transcript_path is null (recording has no transcript)", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(readTranscriptText({ transcript_path: null } as any)).toBeNull();
+    });
+
+    it("returns the file content when transcript.txt exists next to the .json", () => {
+      const { row } = fixture("read-tx-1", "[00:01] Alice: hi there");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(readTranscriptText(row as any)).toBe("[00:01] Alice: hi there");
+    });
+
+    it("returns null when transcript_path is set but transcript.txt doesn't exist", () => {
+      const { row } = fixture("read-tx-2", null);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(readTranscriptText(row as any)).toBeNull();
+    });
+  });
+
+  describe("readSummaryMarkdown", () => {
+    function fixture(dir: string, summary: string | null): {
+      row: { summary_path: string | null };
+      summaryPath: string;
+    } {
+      const folder = path.join(tmpRoot, dir);
+      mkdirSync(folder, { recursive: true });
+      const summaryPath = path.join(folder, "summary.md");
+      if (summary !== null) writeFileSync(summaryPath, summary);
+      return { row: { summary_path: summaryPath }, summaryPath };
+    }
+
+    it("returns null when summary_path is null (recording has no summary)", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(readSummaryMarkdown({ summary_path: null } as any)).toBeNull();
+    });
+
+    it("returns the file content when summary.md exists at summary_path", () => {
+      const { row } = fixture("read-sm-1", "## Key points\n\n- thing one");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(readSummaryMarkdown(row as any)).toBe(
+        "## Key points\n\n- thing one",
+      );
+    });
+
+    it("returns null when summary_path is set but the file doesn't exist on disk", () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const fakeRow: any = {
+        summary_path: path.join(tmpRoot, "nonexistent.md"),
+      };
+      expect(readSummaryMarkdown(fakeRow)).toBeNull();
     });
   });
 });
