@@ -36,9 +36,17 @@ class RecordingDetailResponseFactory extends Factory<
 }
 
 export const recordingDetailResponseFactory =
-  RecordingDetailResponseFactory.define(({ transientParams }) => ({
-    recording: transientParams.recording ?? recordingDetailFactory.build(),
-    mediaBase: "/media/rec-1",
-    availableTags: [],
-    availableCategories: [],
-  }));
+  RecordingDetailResponseFactory.define(({ transientParams }) => {
+    const recording =
+      transientParams.recording ?? recordingDetailFactory.build();
+    // Derive mediaBase from the recording's id so callers that override the
+    // id (via .withRecording(...)) don't end up with a wrapper that still
+    // points at /media/rec-1 — that divergence would let URL-building bugs
+    // slip past tests.
+    return {
+      recording,
+      mediaBase: `/media/${recording.id}`,
+      availableTags: [],
+      availableCategories: [],
+    };
+  });

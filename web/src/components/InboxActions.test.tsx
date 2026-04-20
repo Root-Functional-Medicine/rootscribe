@@ -8,16 +8,22 @@ import {
 import { InboxActions } from "./InboxActions.js";
 import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
 
-// Build an InboxMutationResponse whose recording has a specific inboxStatus.
-// Used by the mutation tests to stub the server's PATCH response — callers
-// only care about the returned `inboxStatus`, so the factory's other
-// derivations (reviewedAt, snoozedUntil) are harmless defaults.
+// Build an InboxMutationResponse whose recording models a specific inbox
+// state. Uses the chainable status traits (new/reviewed/archived) so ALL
+// derived fields (effectiveInboxStatus, reviewedAt, snoozedUntil) stay
+// consistent — spreading only `{ inboxStatus }` would produce impossible
+// combinations (e.g. inboxStatus=reviewed + effectiveInboxStatus=new) that
+// real API responses never emit and that could mask cache-update bugs.
 function mutationResponseFor(
   inboxStatus: "new" | "reviewed" | "archived",
 ): ReturnType<typeof inboxMutationResponseFactory.build> {
-  return inboxMutationResponseFactory
-    .withRecording(recordingDetailFactory.build({ inboxStatus }))
-    .build();
+  const recording =
+    inboxStatus === "reviewed"
+      ? recordingDetailFactory.reviewed().build()
+      : inboxStatus === "archived"
+        ? recordingDetailFactory.archived().build()
+        : recordingDetailFactory.build();
+  return inboxMutationResponseFactory.withRecording(recording).build();
 }
 
 describe("InboxActions — button surface per effective status", () => {

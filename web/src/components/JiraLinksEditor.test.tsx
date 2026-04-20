@@ -21,11 +21,15 @@ const mutationResponse = inboxMutationResponseFactory.build.bind(
 
 // ROOT-101 — the canonical link most tests render. id:1/createdAt:1 match the
 // older hand-rolled constant so fixtures that compare rendered text or ordering
-// don't shift. The factory's default issueUrl template already points at
-// example.atlassian.net, so no override needed there.
+// don't shift. issueUrl is set EXPLICITLY (not inherited from the factory's
+// sequence-derived default) because this constant is built at module scope:
+// if another file in the same Vitest worker has already used the factory, the
+// sequence counter could advance and the default issueUrl would drift to
+// e.g. .../ROOT-107, mismatching the issueKey we pinned here.
 const ROOT_101 = jiraLinkFactory.build({
   id: 1,
   issueKey: "ROOT-101",
+  issueUrl: "https://example.atlassian.net/browse/ROOT-101",
   createdAt: 1,
 });
 
