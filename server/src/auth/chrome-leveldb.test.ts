@@ -270,6 +270,41 @@ describe("findToken — sorting + multi-profile aggregation", () => {
     }
   });
 
+  it("still picks the valid-iat token when another profile's token has a malformed payload (iat=null)", async () => {
+    // Exercises the `iat ?? 0` fallback in the sort comparator (chrome-leveldb.ts:157).
+    // A malformed-payload JWT yields `iat:null` from parseJwt(); the comparator
+    // substitutes 0 so the valid-iat token wins regardless of scan order.
+    const validToken = jwt({ iat: 1_800_000_000, exp: 2_100_000_000 });
+    const malformed = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.!!!!!!!.sig";
+    vi.mocked(discoverProfiles).mockReturnValue([
+      profile({ browser: "Chrome", profile: "Malformed", leveldbPath: "/m" }),
+      profile({ browser: "Chrome", profile: "Valid", leveldbPath: "/v" }),
+    ]);
+    const stages: StagedDb[] = [
+      { getImpl: () => utf16Value(`bearer ${malformed}`), iterateKeys: [] },
+      { getImpl: () => utf16Value(`bearer ${validToken}`), iterateKeys: [] },
+    ];
+    let stageIdx = 0;
+    const originalGet = dbStagesByPath.get.bind(dbStagesByPath);
+    dbStagesByPath.get = (k: string): StagedDb | undefined => {
+      const existing = originalGet(k);
+      if (existing) return existing;
+      const fresh = stages[stageIdx++];
+      if (fresh) dbStagesByPath.set(k, fresh);
+      return fresh;
+    };
+
+    try {
+      const r = await findToken();
+      // Valid-iat profile wins because `(b.iat ?? 0) - (a.iat ?? 0)` with
+      // `b.iat=1_800_000_000` and `a.iat=null→0` is positive → valid first.
+      expect(r?.token).toBe(validToken);
+      expect(r?.iat).toBe(1_800_000_000);
+    } finally {
+      dbStagesByPath.get = originalGet;
+    }
+  });
+
   it("survives a scan failure on one profile and still returns the other profile's token", async () => {
     const token = jwt({ iat: 1, exp: 2 });
     vi.mocked(discoverProfiles).mockReturnValue([

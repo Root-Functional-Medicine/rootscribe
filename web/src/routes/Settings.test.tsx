@@ -485,16 +485,23 @@ describe("Settings — formatRelative branches", () => {
   // threads through formatRelative on every render. Exercise every branch
   // by seeding varying `lastPollAt` values and reading the "Last poll" tile.
   //
-  // Regexes tolerate small wall-clock drift between Date.now() at setup and
-  // the eventual render — under coverage instrumentation re-renders can take
-  // >1s which shifts "30s ago" to "31s ago".
+  // `it.each` computes its input array when the test FILE is evaluated, not
+  // when each test runs. A raw `Date.now() - 3_000` in the array would be
+  // stale by the time this block ran — the "< 10s" case could drift past 10s
+  // (becoming "Xs ago"), and the "< 60s" case could drift past 60s (becoming
+  // "Xm ago") — making the regex assertions flaky. Store *offsets* instead
+  // and resolve them to absolute timestamps inside the test body, where
+  // Date.now() is fresh.
+  const DAY = 24 * 3_600_000;
   it.each([
-    { lastPollAt: null as number | null, expected: /never/i, label: "null → never" },
-    { lastPollAt: Date.now() - 3_000, expected: /just now/i, label: "< 10s → just now" },
-    { lastPollAt: Date.now() - 30_000, expected: /\d+s ago/i, label: "< 60s → Xs ago" },
-    { lastPollAt: Date.now() - 5 * 60_000, expected: /5m ago/i, label: "< 1h → Xm ago" },
-    { lastPollAt: Date.now() - 2 * 3_600_000, expected: /2h ago/i, label: "≥ 1h → Xh ago" },
-  ])("renders $label", async ({ lastPollAt, expected }) => {
+    { offsetMs: null as number | null, expected: /never/i, label: "null → never" },
+    { offsetMs: 3_000, expected: /just now/i, label: "< 10s → just now" },
+    { offsetMs: 30_000, expected: /\d+s ago/i, label: "< 60s → Xs ago" },
+    { offsetMs: 5 * 60_000, expected: /5m ago/i, label: "< 1h → Xm ago" },
+    { offsetMs: 2 * 3_600_000, expected: /2h ago/i, label: "≥ 1h → Xh ago" },
+    { offsetMs: DAY, expected: /24h ago/i, label: "24h → Xh ago (no day cap)" },
+  ])("renders $label", async ({ offsetMs, expected }) => {
+    const lastPollAt = offsetMs == null ? null : Date.now() - offsetMs;
     routeSettingsFetch(stub, { sync: syncStatus({ lastPollAt }) });
     renderWithProviders(<Settings />);
     expect(await screen.findByText(expected)).toBeInTheDocument();

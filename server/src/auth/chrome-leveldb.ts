@@ -155,7 +155,10 @@ export async function findToken(): Promise<FoundToken | null> {
     }
   }
   if (results.length === 0) return null;
-  /* v8 ignore next -- ?? 0 on JWT iat: tokens without iat fall back, unreachable via findToken's happy path */
+  // `iat ?? 0` is load-bearing: malformed JWT payloads make `parseJwt()`
+  // return `iat:null`, and when multiple profiles yield tokens we need a
+  // stable comparator that puts null-iat entries last without throwing.
+  // Covered by findToken's multi-profile-with-null-iat test in chrome-leveldb.test.ts.
   results.sort((a, b) => (b.iat ?? 0) - (a.iat ?? 0));
   /* v8 ignore next -- ?? null at index 0 of a non-empty array is dead after the length guard above */
   return results[0] ?? null;

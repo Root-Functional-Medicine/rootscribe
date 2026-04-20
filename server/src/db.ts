@@ -124,24 +124,24 @@ function migrate(d: Database.Database): void {
 
   // v4 (rootscribe): inbox workflow + jira links + tags.
   // Uses prepare().run() per statement to keep each DDL discrete.
-  // The non-"duplicate"/"already exists" re-throw is defensive — we control
-  // all DDL in the transaction block below, so in practice no statement
-  // throws anything except the two idempotency errors the inner `if`
-  // tolerates. Ignored rather than simulated because fuzzing a SQLite
-  // syntax error mid-migration would teach us nothing useful.
+  // The idempotent-return path IS exercised (re-running migrations on an
+  // already-migrated DB hits the "duplicate column" / "already exists"
+  // branches via startup). Only the final re-throw is defensive — we
+  // control all DDL in-file, so in practice no statement throws anything
+  // the inner `if` doesn't already handle. Narrow the ignore to just the
+  // re-throw so coverage still guards the idempotent-return behavior.
   const safeDdl = (sql: string): void => {
     try {
       d.prepare(sql).run();
     } catch (err: unknown) {
-      /* v8 ignore start -- non-idempotency migration failure is defensive */
       if (err instanceof Database.SqliteError) {
         const message = err.message.toLowerCase();
         if (message.includes("duplicate column name") || message.includes("already exists")) {
           return;
         }
       }
+      /* v8 ignore next -- non-idempotency migration failure; all in-file DDL is controlled, no legitimate way to trigger */
       throw err;
-      /* v8 ignore stop */
     }
   };
 

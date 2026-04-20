@@ -664,10 +664,24 @@ describe("AuthStep — uncovered branches", () => {
   });
 
   it("ticks the elapsed seconds counter on interval fires while waiting", async () => {
-    // The 1-second `setInterval` in startWatch updates elapsedSec. Mix real
-    // timers (required by userEvent + EventSource-stub boot) with a brief
-    // real-time wait to let the interval actually fire once. 1.2s keeps
-    // total test runtime bounded while still exercising the tick branch.
+    // The 1-second `setInterval` in startWatch updates elapsedSec. Two
+    // approaches were tried and rejected before settling on the real-wait
+    // below:
+    //
+    //   1. Full `vi.useFakeTimers()` + `userEvent.setup({ advanceTimers })`
+    //      hangs `screen.findByText`, because testing-library's `waitFor`
+    //      polls via the same `setInterval` fake timers replace.
+    //
+    //   2. Late-install fake timers AFTER the click misses the production
+    //      setInterval registration — the interval was scheduled with real
+    //      timers, so advancing fake time doesn't fire the callback.
+    //
+    // The short real wait (1050ms) is the pragmatic compromise: one tick
+    // fires, the test adds ~1s to the suite (tolerable amid 774 tests),
+    // and CI runners with real wall-clock don't need additional
+    // interop-testing infrastructure. If the slowdown becomes a problem
+    // we'd refactor AuthStep to expose a tick hook rather than chase
+    // timer-mock compatibility across React + testing-library versions.
     const user = userEvent.setup();
     routeAuthFetch(stub, {
       detect: { found: false },
@@ -681,16 +695,11 @@ describe("AuthStep — uncovered branches", () => {
       }),
     );
     await waitFor(() => expect(lastEventSource).not.toBeNull());
-    // elapsedSec should start at 0.
     expect(screen.getByText(/\(0s\)/)).toBeInTheDocument();
 
-    // Wait for at least one interval tick (every 1000ms). 1200ms gives
-    // enough headroom even on a slow CI runner, without stretching the
-    // whole suite meaningfully.
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 1_200));
+      await new Promise((r) => setTimeout(r, 1_050));
     });
-    // The counter bumped from 0 → 1 via the setInterval callback.
     expect(screen.getByText(/\(1s\)/)).toBeInTheDocument();
 
     // Tear down the stream so the interval doesn't leak to later tests.
@@ -701,7 +710,7 @@ describe("AuthStep — uncovered branches", () => {
         }),
       );
     });
-  }, 10_000);
+  });
 });
 
 describe("AuthStep — back navigation", () => {
