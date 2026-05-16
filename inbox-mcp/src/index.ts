@@ -27,7 +27,9 @@ import {
 const server = new McpServer(
   {
     name: "rootscribe-inbox",
-    version: "0.1.0",
+    // Keep in sync with inbox-mcp/package.json. Deriving from
+    // package.json at runtime is scoped under DEVX-314 follow-up.
+    version: "0.1.1",
   },
   {
     capabilities: {

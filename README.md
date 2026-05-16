@@ -109,7 +109,7 @@ Each recording gets its own folder under your chosen recordings directory:
 
 - `content` is only present on `transcript_ready` events. Both fields are nullable — if Plaud didn't generate a summary for a recording, `summary_markdown` will be `null`.
 - Webhook consumers should treat `(id, event)` as idempotent. `audio_ready` always fires before `transcript_ready`; on recordings that are already fully transcribed when first seen, both fire back-to-back in the same poll cycle.
-- Custom headers on every webhook: `User-Agent: rootscribe/0.1.0` and `X-RootScribe-Event: audio_ready|transcript_ready`.
+- Custom headers on every webhook: `User-Agent: rootscribe/0.1.1` and `X-RootScribe-Event: audio_ready|transcript_ready`.
 
 ## n8n workflows
 

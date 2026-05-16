@@ -176,4 +176,7 @@ Notable compatibility fixes that rode along with the upgrade:
   to the upstream fork.
 
 [0.1.1]: https://github.com/Root-Functional-Medicine/rootscribe/releases/tag/v0.1.1
-[0.1.0]: https://github.com/Root-Functional-Medicine/rootscribe/compare/da7ae11...v0.1.1
+<!-- [0.1.0] is intentionally unlinked: that version was never tagged. -->
+<!-- It's documented above as the unreleased pre-hotfix baseline only. -->
+<!-- A link like `da7ae11...v0.1.1` would include 0.1.1's hotfix commits, -->
+<!-- contradicting the section text. -->
