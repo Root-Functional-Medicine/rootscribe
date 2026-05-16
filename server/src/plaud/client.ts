@@ -54,12 +54,23 @@ const USER_AGENT =
 export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promise<Response> {
   const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${getPlaudApiBase()}${pathOrUrl}`;
   const token = init.authOverride ?? getToken();
+  // HTTP header names are case-insensitive (RFC 7230 §3.2) but JS object
+  // keys are case-sensitive strings. If a caller passes "User-Agent" (or
+  // any other casing), a plain spread would leave both their key AND our
+  // locked "user-agent" in the object — and the fetch Headers init
+  // *concatenates* same-named entries, sending Cloudflare the combined
+  // value (e.g. "rootscribe/0.1.0 (+url), Mozilla/..."). Strip any
+  // case-variant of user-agent from caller headers before merging so the
+  // lock is structural across all casings. See DEVX-314.
+  const sanitizedCallerHeaders = Object.fromEntries(
+    Object.entries(init.headers ?? {}).filter(
+      ([key]) => key.toLowerCase() !== "user-agent",
+    ),
+  );
   const headers: Record<string, string> = {
     accept: "application/json",
     authorization: `Bearer ${token}`,
-    ...init.headers,
-    // user-agent is locked AFTER the spread so callers cannot override it
-    // back to a bot-pattern UA that Cloudflare would block. See DEVX-314.
+    ...sanitizedCallerHeaders,
     "user-agent": USER_AGENT,
   };
   // Default JSON content type for methods that likely send a body.
