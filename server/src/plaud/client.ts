@@ -44,7 +44,12 @@ function getToken(): string {
   return cfg.token;
 }
 
-const USER_AGENT = "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)";
+// Plaud's API sits behind Cloudflare bot protection. A self-identifying
+// "rootscribe/X (+url)" UA gets a 403 challenge; the Plaud web app uses a
+// normal browser UA, so we mirror that. Confirmed 2026-05-15: bot-style UA
+// → 403 Cloudflare HTML; browser UA → 200 JSON. See PR/ticket for details.
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promise<Response> {
   const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${getPlaudApiBase()}${pathOrUrl}`;

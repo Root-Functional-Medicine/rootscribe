@@ -122,7 +122,13 @@ describe("plaudFetch — URL + headers", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer test-token");
     expect(headers.accept).toBe("application/json");
-    expect(headers["user-agent"]).toContain("rootscribe/");
+    const ua = headers["user-agent"];
+    expect(ua).toBeTruthy();
+    // Plaud sits behind Cloudflare bot protection. A self-identifying UA of
+    // the form `name/version (+https://...)` triggered a 403 challenge on
+    // 2026-05-15. Keep this regression: never send a UA that advertises us
+    // as an automated client. See DEVX-314.
+    expect(ua).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
   });
 
   it("uses authOverride over the configured token when provided", async () => {
