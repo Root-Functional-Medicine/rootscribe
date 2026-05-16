@@ -131,6 +131,24 @@ describe("plaudFetch — URL + headers", () => {
     expect(ua).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
   });
 
+  it("locks the User-Agent even when a caller passes a bot-pattern override", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await plaudFetch("/x", {
+      headers: {
+        "user-agent": "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)",
+      },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const ua = headers["user-agent"];
+    expect(ua).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
+    expect(ua).not.toContain("rootscribe/");
+  });
+
   it("uses authOverride over the configured token when provided", async () => {
     const fetchMock = vi
       .fn()

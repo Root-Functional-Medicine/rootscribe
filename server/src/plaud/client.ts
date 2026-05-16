@@ -56,9 +56,11 @@ export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promi
   const token = init.authOverride ?? getToken();
   const headers: Record<string, string> = {
     accept: "application/json",
-    "user-agent": USER_AGENT,
     authorization: `Bearer ${token}`,
     ...init.headers,
+    // user-agent is locked AFTER the spread so callers cannot override it
+    // back to a bot-pattern UA that Cloudflare would block. See DEVX-314.
+    "user-agent": USER_AGENT,
   };
   // Default JSON content type for methods that likely send a body.
   if (init.body && !headers["content-type"]) {
