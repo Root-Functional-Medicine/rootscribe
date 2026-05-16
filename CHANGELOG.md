@@ -5,11 +5,58 @@ All notable changes to RootScribe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.0] — 2026-05-16
+## [0.1.1] — 2026-05-16
 
-First RootScribe release. Forked from
+First tagged release. Hotfix on top of the unreleased `0.1.0` baseline so
+the Plaud sync poller works against Cloudflare's bot WAF, plus repository
+hygiene needed to publish.
+
+### Fixed
+
+- **Plaud Cloudflare 403 challenge — DEVX-314.** The self-identifying
+  `rootscribe/0.1.0 (+url)` User-Agent started triggering Cloudflare's bot
+  WAF on 2026-05-15, returning a 403 challenge page to the sync poller.
+  Token auth was unaffected; the request never reached Plaud's origin.
+  Swapped `USER_AGENT` in `server/src/plaud/client.ts` to a Chrome string.
+- **Structural UA lock — DEVX-314.** `user-agent` is now applied AFTER the
+  `init.headers` spread inside `plaudFetch`, so callers cannot override it
+  back to a bot-pattern UA. The previous merge order would have let a
+  future caller defeat the regression test by passing their own header.
+- Two regression tests in `server/src/plaud/client.test.ts` forbid any UA
+  matching `^name/ver (+http...)` on **both** the default-headers path
+  AND the caller-override path. Intentionally stricter than pinning the
+  Chrome string so DEVX-314's follow-up env-var work doesn't break them.
+
+### Added
+
+- `CHANGELOG.md` (this file). Format follows
+  [Keep a Changelog 1.1](https://keepachangelog.com/en/1.1.0/) +
+  [SemVer 2.0](https://semver.org/spec/v2.0.0.html).
+
+### Removed
+
+- Workspace-root `.mcp.json`. The inbox MCP is now provided via the
+  seedkit plugin's plugin-level `.mcp.json`, so the workspace-root copy
+  was stale.
+
+### Deferred to a follow-up under DEVX-314
+
+- `PlaudEdgeBlockedError` — a dedicated error class for Cloudflare 403
+  challenges, distinct from generic `PlaudApiError` and from
+  `PlaudAuthError`, so operators can immediately tell an edge block from
+  an auth problem.
+- `ROOTSCRIBE_PLAUD_USER_AGENT` env var — operator-overridable UA so
+  future Cloudflare rule changes can be worked around without a code
+  change. The locked default stays the Chrome string above.
+
+## [0.1.0] — unreleased baseline
+
+The pre-hotfix RootScribe baseline. Never formally tagged but the version
+identifier was live in code (the broken UA self-identified as
+`rootscribe/0.1.0`). Forked from
 [`rsteckler/applaud`](https://github.com/rsteckler/applaud) at `v0.5.6`
-(upstream commit `da7ae11`). 168 commits across 7 DEVX tickets plus the
+(upstream commit `da7ae11`). 135 commits across 6 DEVX tickets
+(DEVX-96, DEVX-99, DEVX-100, DEVX-101, DEVX-102, DEVX-103) plus the
 foundational inbox-MCP work that motivated the fork.
 
 ### Added
@@ -101,22 +148,15 @@ Notable compatibility fixes that rode along with the upgrade:
 
 ### Fixed
 
-- **Plaud Cloudflare 403 challenge — DEVX-314 (this release).** The
-  self-identifying `rootscribe/0.1.0 (+url)` User-Agent started triggering
-  Cloudflare's bot WAF on 2026-05-15, returning a 403 challenge page to the
-  sync poller. Token auth was unaffected; the request never reached Plaud's
-  origin. Swapped `USER_AGENT` in `server/src/plaud/client.ts` to a Chrome
-  string and added a regression test forbidding any UA matching
-  `^name/ver (+http...)`. The full fix — a `PlaudEdgeBlockedError` branch
-  and `ROOTSCRIBE_PLAUD_USER_AGENT` env-var override — is scheduled as a
-  follow-up under DEVX-314.
 - Settings save-error now clears on field edits.
 - Suppress the server's first-run browser popup during Playwright e2e runs.
 
+> The Plaud Cloudflare 403 hotfix and `.mcp.json` removal land in
+> [0.1.1](#011--2026-05-16), not here. They're the reason 0.1.0 was
+> never published.
+
 ### Removed
 
-- Workspace-root `.mcp.json`. The inbox MCP is now provided via the seedkit
-  plugin's plugin-level `.mcp.json`, so the workspace-root copy was stale.
 - Unused `@applaud/shared` dependency from `inbox-mcp`.
 
 ### Repository conventions established this release
@@ -135,4 +175,5 @@ Notable compatibility fixes that rode along with the upgrade:
   clone (handled by `scripts/dev-setup.sh`) to prevent `gh` from defaulting
   to the upstream fork.
 
-[0.1.0]: https://github.com/Root-Functional-Medicine/rootscribe/releases/tag/v0.1.0
+[0.1.1]: https://github.com/Root-Functional-Medicine/rootscribe/releases/tag/v0.1.1
+[0.1.0]: https://github.com/Root-Functional-Medicine/rootscribe/compare/da7ae11...v0.1.1
