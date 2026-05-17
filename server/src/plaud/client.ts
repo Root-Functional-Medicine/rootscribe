@@ -44,16 +44,34 @@ function getToken(): string {
   return cfg.token;
 }
 
-const USER_AGENT = "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)";
+// Plaud's API sits behind Cloudflare bot protection. A self-identifying
+// "rootscribe/X (+url)" UA gets a 403 challenge; the Plaud web app uses a
+// normal browser UA, so we mirror that. Confirmed 2026-05-15: bot-style UA
+// → 403 Cloudflare HTML; browser UA → 200 JSON. See PR/ticket for details.
+const USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 export async function plaudFetch(pathOrUrl: string, init: FetchInit = {}): Promise<Response> {
   const url = pathOrUrl.startsWith("http") ? pathOrUrl : `${getPlaudApiBase()}${pathOrUrl}`;
   const token = init.authOverride ?? getToken();
+  // HTTP header names are case-insensitive (RFC 7230 §3.2) but JS object
+  // keys are case-sensitive strings. If a caller passes "User-Agent" (or
+  // any other casing), a plain spread would leave both their key AND our
+  // locked "user-agent" in the object — and the fetch Headers init
+  // *concatenates* same-named entries, sending Cloudflare the combined
+  // value (e.g. "rootscribe/0.1.0 (+url), Mozilla/..."). Strip any
+  // case-variant of user-agent from caller headers before merging so the
+  // lock is structural across all casings. See DEVX-314.
+  const sanitizedCallerHeaders = Object.fromEntries(
+    Object.entries(init.headers ?? {}).filter(
+      ([key]) => key.toLowerCase() !== "user-agent",
+    ),
+  );
   const headers: Record<string, string> = {
     accept: "application/json",
-    "user-agent": USER_AGENT,
     authorization: `Bearer ${token}`,
-    ...init.headers,
+    ...sanitizedCallerHeaders,
+    "user-agent": USER_AGENT,
   };
   // Default JSON content type for methods that likely send a body.
   if (init.body && !headers["content-type"]) {

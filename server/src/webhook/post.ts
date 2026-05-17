@@ -99,7 +99,7 @@ async function fireRaw(
         method: "POST",
         headers: {
           "content-type": "application/json",
-          "user-agent": "rootscribe/0.1.0",
+          "user-agent": "rootscribe/0.1.1",
           "x-rootscribe-event": event,
         },
         body,
@@ -181,7 +181,7 @@ export async function testWebhook(
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "user-agent": "rootscribe/0.1.0",
+        "user-agent": "rootscribe/0.1.1",
         "x-rootscribe-event": "transcript_ready",
         "x-rootscribe-test": "1",
       },

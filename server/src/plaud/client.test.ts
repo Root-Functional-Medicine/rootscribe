@@ -122,7 +122,66 @@ describe("plaudFetch — URL + headers", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers.authorization).toBe("Bearer test-token");
     expect(headers.accept).toBe("application/json");
-    expect(headers["user-agent"]).toContain("rootscribe/");
+    const ua = headers["user-agent"];
+    expect(ua).toBeTruthy();
+    // Plaud sits behind Cloudflare bot protection. A self-identifying UA of
+    // the form `name/version (+https://...)` triggered a 403 challenge on
+    // 2026-05-15. Keep this regression: never send a UA that advertises us
+    // as an automated client. See DEVX-314.
+    expect(ua).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
+  });
+
+  it("locks the User-Agent even when a caller passes a bot-pattern override", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await plaudFetch("/x", {
+      headers: {
+        "user-agent": "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)",
+      },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const ua = headers["user-agent"];
+    expect(ua).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
+    expect(ua).not.toContain("rootscribe/");
+  });
+
+  it("locks the User-Agent across all caller casings (case-insensitive sanitization)", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response("ok", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    // HTTP header names are case-insensitive but JS object keys are not. A
+    // caller passing "User-Agent" (or "USER-AGENT") would leave a stray
+    // bot-pattern UA in the merged object; fetch's Headers init concatenates
+    // same-named entries, so Cloudflare would see the bot pattern in the
+    // combined value. The sanitization must strip ALL case variants.
+    await plaudFetch("/x", {
+      headers: {
+        "User-Agent": "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)",
+        "USER-AGENT": "rootscribe/0.1.0 (+https://github.com/Root-Functional-Medicine/rootscribe)",
+      },
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+
+    // Only the locked lowercase user-agent should remain; no case-variant
+    // keys should have leaked through.
+    const uaKeys = Object.keys(headers).filter(
+      (k) => k.toLowerCase() === "user-agent",
+    );
+    expect(uaKeys).toEqual(["user-agent"]);
+
+    // And no header value anywhere in the merged object should contain
+    // the bot-pattern signal — belt + suspenders.
+    for (const value of Object.values(headers)) {
+      expect(value).not.toContain("rootscribe/");
+      expect(value).not.toMatch(/^\S+\/\S+\s+\(\+https?:\/\//);
+    }
   });
 
   it("uses authOverride over the configured token when provided", async () => {
