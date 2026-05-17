@@ -22,10 +22,12 @@ hygiene needed to publish.
   `init.headers` spread inside `plaudFetch`, so callers cannot override it
   back to a bot-pattern UA. The previous merge order would have let a
   future caller defeat the regression test by passing their own header.
-- Two regression tests in `server/src/plaud/client.test.ts` forbid any UA
-  matching `^name/ver (+http...)` on **both** the default-headers path
-  AND the caller-override path. Intentionally stricter than pinning the
-  Chrome string so DEVX-314's follow-up env-var work doesn't break them.
+- Three regression tests in `server/src/plaud/client.test.ts` forbid any
+  UA matching `^name/ver (+http...)` across the **default-headers** path,
+  the **lowercase caller-override** path, and the **case-variant
+  caller-override** path (`User-Agent`, `USER-AGENT`). Intentionally
+  stricter than pinning the Chrome string so DEVX-314's follow-up
+  env-var work doesn't break them.
 
 ### Added
 
