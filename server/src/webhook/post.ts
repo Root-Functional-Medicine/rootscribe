@@ -164,12 +164,18 @@ async function fireRaw(
   event: WebhookEvent,
 ): Promise<boolean> {
   const body = JSON.stringify(payload);
+  // Capture the signing key ONCE per delivery. A secret rotated in Settings
+  // during the 5s/30s backoff must not re-sign the retry with the new key —
+  // the receiver still expects the old one and a transient 503 would turn
+  // into a permanent rejection. The timestamp/signature are still
+  // recomputed per attempt inside deliveryHeaders().
+  const secret = loadConfig().webhook?.secret;
   for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
     const started = Date.now();
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: deliveryHeaders(event, body, loadConfig().webhook?.secret),
+        headers: deliveryHeaders(event, body, secret),
         body,
       });
       const text = (await res.text().catch(() => "")).slice(0, 500);

@@ -17,6 +17,10 @@ export function WebhookStep({
   // the Settings page after setup.
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
   const instanceId = cfg.data?.config.instanceId ?? null;
+  // A wizard resumed after a partial setup may already have a stored secret.
+  // Next and Test Connection both keep it when this field is blank, so the
+  // copy has to say so rather than promise "unsigned".
+  const secretConfigured = Boolean(cfg.data?.config.webhook?.secretConfigured);
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     statusCode?: number;
@@ -104,7 +108,11 @@ export function WebhookStep({
             type="text"
             autoComplete="off"
             spellCheck={false}
-            placeholder="optional — leave blank to send unsigned"
+            placeholder={
+              secretConfigured
+                ? "a secret is already stored — leave blank to keep it, or generate a new one"
+                : "optional — leave blank to send unsigned"
+            }
             value={secret}
             onChange={(e) => { setSecret(e.target.value); setTestResult(null); }}
           />

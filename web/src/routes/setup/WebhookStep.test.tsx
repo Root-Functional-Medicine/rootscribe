@@ -354,6 +354,35 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(await screen.findByText("inst-wizard-42")).toBeInTheDocument();
   });
 
+  it("tells a resumed wizard that a stored secret is kept when the field is left blank", async () => {
+    // Copilot review on PR #19 round 4: setup can be abandoned after this
+    // step saved a secret, and Next/Test both preserve a stored secret when
+    // the field is blank — so "leave blank to send unsigned" would be false.
+    routeWebhookFetch(stub, {
+      config: appConfigFactory
+        .authenticated()
+        .withWebhook({ url: "https://hook.example", enabled: true, secretConfigured: true })
+        .build(),
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+        "placeholder",
+        expect.stringMatching(/keep/i),
+      );
+    });
+  });
+
+  it("tells a fresh wizard that a blank field sends unsigned", async () => {
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await screen.findByText(/instance id/i);
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/unsigned/i),
+    );
+  });
+
   it("Generate fills the signing secret with 64 hex characters", async () => {
     const user = userEvent.setup();
     routeWebhookFetch(stub);

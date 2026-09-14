@@ -562,6 +562,38 @@ describe("fireWebhookForRecording — signing + instance headers", () => {
     expect(headers).not.toHaveProperty("x-rootscribe-signature");
   });
 
+  it("captures the secret once per delivery so a rotation mid-backoff does not break the retry", async () => {
+    // Copilot review on PR #19 round 4: re-reading the secret on every
+    // attempt means a 503 followed by a secret rotation in Settings would
+    // sign the retry with the NEW key, which the original receiver rejects —
+    // a transient failure becomes a permanent one. The timestamp/signature
+    // are still recomputed per attempt, just with the captured key.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-rotate",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    // Attempt 1 has fired (503) and the 5s backoff is armed. Rotate now.
+    await vi.advanceTimersByTimeAsync(0);
+    updateConfig({ webhook: { url: "https://hook.example/ingest", enabled: true, secret: "rotated" } });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    for (const call of fetchMock.mock.calls) {
+      const init = call[1] as RequestInit;
+      const { t, v1 } = parseSignature((init.headers as Record<string, string>)["x-rootscribe-signature"]!);
+      expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+    }
+  });
+
   it("re-signs every retry attempt so a delivery after backoff still verifies", async () => {
     updateConfig({
       webhook: { url: "https://hook.example/ingest", enabled: true, secret },
