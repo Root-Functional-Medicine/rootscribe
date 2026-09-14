@@ -33,6 +33,11 @@ export function Settings(): JSX.Element {
   // non-empty value replaces it, and clearSecret=true sends "" to drop it.
   const [webhookSecret, setWebhookSecret] = useState("");
   const [clearSecret, setClearSecret] = useState(false);
+  // True once the URL or secret has been edited this session. Only then is
+  // `webhook` included in the save: the server keeps the stored webhook when
+  // the key is omitted, so an unrelated save (poll interval, instance id)
+  // can never re-post a stale cached value — including null — over it.
+  const [webhookTouched, setWebhookTouched] = useState(false);
   const [instanceId, setInstanceId] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
@@ -70,6 +75,7 @@ export function Settings(): JSX.Element {
     // fresh load resets the draft to "untouched".
     setWebhookSecret("");
     setClearSecret(false);
+    setWebhookTouched(false);
     setInstanceId(c.instanceId ?? "");
     setPollMinutes(c.pollIntervalMinutes);
     setJiraBaseUrl(c.jiraBaseUrl ?? "");
@@ -77,6 +83,15 @@ export function Settings(): JSX.Element {
     // deliberately not dependencies — listing them would re-run hydration
     // on every keystroke (guarded by `dirty`, but pointless work).
   }, [cfg.data, dirty]);
+
+  // Every completed refetch may reflect a config change another client made
+  // — including a secret rotation, which is invisible in the redacted
+  // response — so an in-flight Test can no longer be trusted. Not gated on
+  // `dirty`: the stored state changed regardless of local edits.
+  useEffect(() => {
+    if (cfg.dataUpdatedAt) invalidateTest();
+    // invalidateTest is stable in effect (bumps a ref, clears state).
+  }, [cfg.dataUpdatedAt]);
 
   if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   const c = cfg.data?.config;
@@ -99,15 +114,19 @@ export function Settings(): JSX.Element {
       // cleared field for an identifier the server minted.
       const trimmedInstanceId = instanceId.trim();
       await api.updateConfig({
-        webhook: webhookUrl.trim()
+        ...(webhookTouched
           ? {
-              url: webhookUrl.trim(),
-              enabled: true,
-              // Tri-state on the wire: omitted = keep stored, "" = clear,
-              // non-empty = replace.
-              ...(draftSecret() !== undefined ? { secret: draftSecret() } : {}),
+              webhook: webhookUrl.trim()
+                ? {
+                    url: webhookUrl.trim(),
+                    enabled: true,
+                    // Tri-state on the wire: omitted = keep stored, "" =
+                    // clear, non-empty = replace.
+                    ...(draftSecret() !== undefined ? { secret: draftSecret() } : {}),
+                  }
+                : null,
             }
-          : null,
+          : {}),
         pollIntervalMinutes: pollMinutes,
         jiraBaseUrl: trimmedJira,
         ...(trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
@@ -265,6 +284,7 @@ export function Settings(): JSX.Element {
               disabled={saving}
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
+                setWebhookTouched(true);
                 setDirty(true);
                 invalidateTest();
                 // Clear any prior save error so it doesn't linger after the
@@ -331,6 +351,7 @@ export function Settings(): JSX.Element {
                 onChange={(e) => {
                   setWebhookSecret(e.target.value);
                   setClearSecret(false);
+                  setWebhookTouched(true);
                   setDirty(true);
                   setSaveError(null);
                   // A prior (or in-flight) Test described a different secret.
@@ -344,6 +365,7 @@ export function Settings(): JSX.Element {
                 onClick={() => {
                   setWebhookSecret(generateWebhookSecret());
                   setClearSecret(false);
+                  setWebhookTouched(true);
                   setDirty(true);
                   setSaveError(null);
                   invalidateTest();
@@ -359,6 +381,7 @@ export function Settings(): JSX.Element {
                   onClick={() => {
                     setWebhookSecret("");
                     setClearSecret(true);
+                    setWebhookTouched(true);
                     setDirty(true);
                     setSaveError(null);
                     invalidateTest();

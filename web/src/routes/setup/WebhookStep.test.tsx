@@ -693,6 +693,51 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(screen.getByRole("button", { name: /test connection/i })).toBeDisabled();
   });
 
+  it("any completed config refetch discards an in-flight Test Connection, even when the URL did not change", async () => {
+    // Copilot review on PR #19 round 18 (suppressed finding): a secret-only
+    // rotation is invisible in the redacted response, so the URL-change
+    // check alone let an old-key test render as success.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    const config = appConfigFactory
+      .authenticated()
+      .withWebhook({ url: "https://hook.example", enabled: true, secretConfigured: true })
+      .build();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) return Promise.resolve(jsonResponse({ config }));
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url.includes("/api/config/test-webhook")) {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://hook.example"),
+    );
+
+    await clickTestConnection(user);
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(jsonResponse({ config }));
+    await new Promise((r) => setTimeout(r, 30));
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();

@@ -35,14 +35,14 @@ export function WebhookStep({
   const urlTouched = useRef(false);
   useEffect(() => {
     if (!cfg.data || urlTouched.current) return;
-    const stored = cfg.data.config.webhook?.url ?? "";
-    // A Test Connection started against the previous URL must not render
-    // as success for the newly hydrated one.
-    if (stored !== url) invalidateTest();
-    setUrl(stored);
-    // `url` is read for the change check only and is deliberately not a
-    // dependency (hydration must run on server data, not on keystrokes).
+    setUrl(cfg.data.config.webhook?.url ?? "");
   }, [cfg.data]);
+  // Every completed refetch may reflect a config change another client made
+  // — including a secret rotation, which is invisible in the redacted
+  // response — so an in-flight Test Connection can no longer be trusted.
+  useEffect(() => {
+    if (cfg.dataUpdatedAt) invalidateTest();
+  }, [cfg.dataUpdatedAt]);
   // The config query failed and the user has not touched the URL: the
   // field may show stale cached data. Saving that URL together with a typed
   // secret could resurrect a webhook the server removed or changed, so the

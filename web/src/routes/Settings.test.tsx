@@ -710,7 +710,11 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
   });
 
-  it("an untouched secret field is omitted from the save so the stored secret is kept; a blank instance id is omitted too", async () => {
+  it("omits `webhook` entirely when neither the URL nor the secret was edited (stored webhook + secret are kept); a blank instance id is omitted too", async () => {
+    // Copilot review on PR #19 round 18 (suppressed finding): re-posting the
+    // hydrated webhook on an unrelated save could send a stale cached value
+    // (even null) over the server's current URL + secret. The server treats
+    // an omitted `webhook` as "keep", so only send it when it was edited.
     const user = userEvent.setup();
     routeSettingsFetch(stub, {
       config: makeConfig({
@@ -726,9 +730,65 @@ describe("Settings — webhook signing secret + instance id", () => {
 
     await waitFor(() => {
       const body = findPost("/api/config");
-      expect(body.webhook).toEqual({ url: "https://hook.example", enabled: true });
+      expect(body).not.toHaveProperty("webhook");
       expect(body).not.toHaveProperty("instanceId");
     });
+  });
+
+  it("includes `webhook` when only the secret was edited (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+    });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config").webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "new-secret",
+      });
+    });
+  });
+
+  it("any completed config refetch discards an in-flight Test (a secret-only rotation is invisible in the redacted response)", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    const config = makeConfig({ webhook: { url: "https://hook.example", enabled: true, secretConfigured: true } });
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) return Promise.resolve(jsonResponse({ config }));
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    // Identical payload — the only thing that could have changed is the redacted secret.
+    resolveRefetch!(jsonResponse({ config }));
+    await new Promise((r) => setTimeout(r, 30));
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
   });
 
   it("Clear sends webhook.secret as an empty string so the server drops the stored secret", async () => {
