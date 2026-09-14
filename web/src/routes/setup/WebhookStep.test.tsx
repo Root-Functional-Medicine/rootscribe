@@ -336,6 +336,38 @@ describe("WebhookStep — save + navigation", () => {
     await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 
+  it("disables the draft controls and navigation while the save is in flight", async () => {
+    // Copilot review on PR #19 round 13 (suppressed finding): an edit made
+    // after clicking Next was excluded from the saved webhook and lost on
+    // unmount.
+    const user = userEvent.setup();
+    let resolvePost: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(jsonResponse({ config: appConfigFactory.authenticated().build() }));
+      }
+      if (url === "/api/config" && method === "POST") {
+        return new Promise<Response>((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+    await waitFor(() => expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+
+    await waitFor(() => expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toBeDisabled());
+    expect(screen.getByLabelText(/signing secret/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /generate/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^back$/i })).toBeDisabled();
+    resolvePost(jsonResponse({ config: {} }));
+  });
+
   it("clicking Back calls onBack", async () => {
     const user = userEvent.setup();
     const onBack = vi.fn();

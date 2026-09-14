@@ -953,6 +953,42 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
   });
 
+  it("disables the editable controls while a save is in flight so a late edit cannot be silently lost", async () => {
+    // Copilot review on PR #19 round 13 (suppressed finding): an edit made
+    // after clicking Save was neither saved nor kept — the post-save
+    // re-hydration discarded it.
+    const user = userEvent.setup();
+    let resolvePost: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }) }),
+        );
+      }
+      if (url === "/api/config" && method === "POST") {
+        return new Promise<Response>((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "s");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(screen.getByLabelText(/signing secret/i)).toBeDisabled());
+    expect(screen.getByLabelText(/instance id/i)).toBeDisabled();
+    expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /generate/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^test$/i })).toBeDisabled();
+
+    resolvePost(jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true, secretConfigured: true } }) }));
+    await waitFor(() => expect(screen.getByLabelText(/signing secret/i)).toBeEnabled());
+  });
+
   it("shows a placeholder when the server has not minted an instance id yet", async () => {
     routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
     renderWithProviders(<Settings />);

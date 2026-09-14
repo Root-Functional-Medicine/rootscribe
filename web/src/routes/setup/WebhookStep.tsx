@@ -14,6 +14,10 @@ export function WebhookStep({
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [testing, setTesting] = useState(false);
+  // While saving, every draft control and both navigation buttons are
+  // disabled: the POST captures the draft at click time and onNext()
+  // unmounts the step, so an edit made during the request would be lost.
+  const [saving, setSaving] = useState(false);
   // Read-only here: the server minted this on first run. It is editable on
   // the Settings page after setup.
   const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
@@ -81,6 +85,16 @@ export function WebhookStep({
       onNext();
       return;
     }
+    setSaving(true);
+    try {
+      await persistDraft();
+    } finally {
+      setSaving(false);
+    }
+    onNext();
+  };
+
+  const persistDraft = async (): Promise<void> => {
     if (url.trim() === "") {
       // A blank URL means "no webhook" only when we KNOW that is the stored
       // state (config loaded) or the user deliberately cleared it. If the
@@ -103,7 +117,6 @@ export function WebhookStep({
     // would remount the step from the stale cache (webhook: null), show
     // Skip, and post null over the webhook we just saved.
     await qc.invalidateQueries({ queryKey: ["config"] });
-    onNext();
   };
 
   return (
@@ -130,6 +143,7 @@ export function WebhookStep({
             type="url"
             placeholder="https://api.yourdomain.com/webhooks/rootscribe"
             value={url}
+            disabled={saving}
             onChange={(e) => { urlTouched.current = true; setUrl(e.target.value); invalidateTest(); }}
           />
         </div>
@@ -155,11 +169,13 @@ export function WebhookStep({
                   : "optional — leave blank to send unsigned"
             }
             value={secret}
+            disabled={saving}
             onChange={(e) => { setSecret(e.target.value); invalidateTest(); }}
           />
           <button
             type="button"
             className="btn-primary px-6 py-3 whitespace-nowrap"
+            disabled={saving}
             onClick={() => { setSecret(generateWebhookSecret()); invalidateTest(); }}
           >
             Generate
@@ -194,7 +210,7 @@ export function WebhookStep({
       </div>
 
       {url.trim() && (
-        <button className="btn-primary px-6 py-3" onClick={() => void test()} disabled={testing}>
+        <button className="btn-primary px-6 py-3" onClick={() => void test()} disabled={testing || saving}>
           {testing ? "Testing…" : "Test Connection"}
         </button>
       )}
@@ -222,7 +238,7 @@ export function WebhookStep({
       )}
 
       <div className="flex items-center justify-between pt-4">
-        <button className="flex items-center gap-2 text-on-surface-variant font-semibold text-sm hover:text-on-surface transition-colors group" onClick={onBack}>
+        <button className="flex items-center gap-2 text-on-surface-variant font-semibold text-sm hover:text-on-surface transition-colors group" onClick={onBack} disabled={saving}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:-translate-x-1 transition-transform"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           Back
         </button>
@@ -232,7 +248,7 @@ export function WebhookStep({
           // isPending is false as soon as any data is cached, so a remount
           // with stale cached webhook=null during a refetch would otherwise
           // enable a Skip that posts null over a stored webhook.
-          disabled={cfg.isPending || cfg.isFetching}
+          disabled={cfg.isPending || cfg.isFetching || saving}
           onClick={() => void saveAndContinue()}
         >
           {url.trim() ? "Next" : "Skip"}

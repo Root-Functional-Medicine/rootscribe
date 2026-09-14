@@ -73,6 +73,9 @@ export function Settings(): JSX.Element {
   const c = cfg.data?.config;
   if (!c) return <p>failed to load</p>;
 
+  // While `saving` is true every editable control is disabled: the POST
+  // captures the draft at click time and the post-save re-hydration would
+  // otherwise silently discard an edit made during the request.
   const save = async (): Promise<void> => {
     setSaving(true);
     setSaveError(null);
@@ -250,6 +253,7 @@ export function Settings(): JSX.Element {
               type="url"
               placeholder="https://api.yourdomain.com/v1/ingest"
               value={webhookUrl}
+              disabled={saving}
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
                 setDirty(true);
@@ -262,7 +266,7 @@ export function Settings(): JSX.Element {
             <button
               className="btn-primary px-6 py-3"
               onClick={() => void test()}
-              disabled={!webhookUrl}
+              disabled={!webhookUrl || saving}
             >
               Test
             </button>
@@ -314,6 +318,7 @@ export function Settings(): JSX.Element {
                 spellCheck={false}
                 placeholder={secretPlaceholder}
                 value={webhookSecret}
+                disabled={saving}
                 onChange={(e) => {
                   setWebhookSecret(e.target.value);
                   setClearSecret(false);
@@ -326,6 +331,7 @@ export function Settings(): JSX.Element {
               <button
                 type="button"
                 className="btn-primary px-6 py-3"
+                disabled={saving}
                 onClick={() => {
                   setWebhookSecret(generateWebhookSecret());
                   setClearSecret(false);
@@ -340,6 +346,7 @@ export function Settings(): JSX.Element {
                 <button
                   type="button"
                   className="px-4 py-3 text-sm font-semibold text-on-surface-variant hover:text-error transition-colors"
+                  disabled={saving}
                   onClick={() => {
                     setWebhookSecret("");
                     setClearSecret(true);
@@ -376,6 +383,7 @@ export function Settings(): JSX.Element {
               spellCheck={false}
               placeholder="generated on first run"
               value={instanceId}
+              disabled={saving}
               onChange={(e) => {
                 setInstanceId(e.target.value);
                 setDirty(true);
@@ -417,6 +425,7 @@ export function Settings(): JSX.Element {
             min={1}
             max={60}
             value={pollMinutes}
+            disabled={saving}
             onChange={(e) => {
               setPollMinutes(Number(e.target.value));
               setDirty(true);
@@ -457,6 +466,7 @@ export function Settings(): JSX.Element {
               type="url"
               placeholder={DEFAULT_CONFIG.jiraBaseUrl}
               value={jiraBaseUrl}
+              disabled={saving}
               onChange={(e) => {
                 setJiraBaseUrl(e.target.value);
                 setDirty(true);
