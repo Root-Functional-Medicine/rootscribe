@@ -373,6 +373,55 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
   });
 
+  it("hydrates the URL from a stored webhook so revisiting the step offers Next, not a destructive Skip", async () => {
+    // Copilot review on PR #19 round 5: with url starting at "", a revisit
+    // rendered "Skip", whose click sends webhook=null and deletes the stored
+    // URL and secret — contradicting the "stored secret is kept" copy.
+    routeWebhookFetch(stub, {
+      config: appConfigFactory
+        .authenticated()
+        .withWebhook({ url: "https://stored.example/ingest", enabled: true, secretConfigured: true })
+        .build(),
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue(
+        "https://stored.example/ingest",
+      );
+    });
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^skip$/i })).not.toBeInTheDocument();
+  });
+
+  it("does not clobber a URL the user has already typed when the config arrives", async () => {
+    const user = userEvent.setup();
+    let resolveConfig: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return new Promise<Response>((resolve) => {
+          resolveConfig = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://typed.example");
+    resolveConfig(
+      jsonResponse({
+        config: appConfigFactory
+          .authenticated()
+          .withWebhook({ url: "https://stored.example/ingest", enabled: true })
+          .build(),
+      }),
+    );
+    await screen.findByText(/instance id/i);
+    expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://typed.example");
+  });
+
   it("tells a fresh wizard that a blank field sends unsigned", async () => {
     routeWebhookFetch(stub);
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);

@@ -20,8 +20,14 @@ export const configRouter = Router();
 // a boolean — this API has no auth and Docker binds 0.0.0.0, so a LAN client
 // that could read the secret could forge HMAC-valid deliveries.
 function redactForClient(cfg: AppConfig): AppConfig {
+  // Same rule as the delivery path's usableSecret(): only a non-empty STRING
+  // signs, so only that counts as "configured" — a hand-edited non-string
+  // must not make Settings claim verification is active.
   const webhook = cfg.webhook
-    ? (({ secret, ...rest }) => ({ ...rest, secretConfigured: Boolean(secret) }))(cfg.webhook)
+    ? (({ secret, ...rest }) => ({
+        ...rest,
+        secretConfigured: typeof secret === "string" && secret.length > 0,
+      }))(cfg.webhook)
     : cfg.webhook;
   return { ...cfg, token: cfg.token ? "***REDACTED***" : null, webhook };
 }

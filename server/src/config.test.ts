@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -157,6 +157,39 @@ describe("ensureInstanceId — persisted value is validated like the API input",
         /^[0-9a-f-]{36}$/,
       );
     }
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — persistence failure must not become an outage", () => {
+  // chmod-based read-only files are bypassed by root; GitHub-hosted runners
+  // and developer machines are non-root, which is where this matters.
+  const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+  it.skipIf(isRoot)("falls back to an in-memory id (no throw) when settings.json cannot be written", async () => {
+    // Copilot review on PR #19 round 5: saveConfig() throwing (read-only
+    // file, full disk) would surface in main() before listen() and, on the
+    // delivery path, inside fireRaw's try before fetch — turning a readable
+    // config into a startup or delivery outage just to add a header.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    const original = JSON.stringify({ token: "t" });
+    writeFileSync(settingsFile, original);
+    chmodSync(settingsFile, 0o400);
+
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    let id = "";
+    expect(() => {
+      id = ensureInstanceId();
+    }).not.toThrow();
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    // Stable for the process even though it could not be persisted...
+    expect(ensureInstanceId()).toBe(id);
+    expect(loadConfig().instanceId).toBe(id);
+    // ...and the file is exactly as it was.
+    expect(readFileSync(settingsFile, "utf8")).toBe(original);
+    chmodSync(settingsFile, 0o600);
     resetConfigCache();
   });
 });

@@ -1,4 +1,4 @@
-import { useState, type JSX } from "react";
+import { useEffect, useRef, useState, type JSX } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api.js";
 import { generateWebhookSecret } from "../../lib/webhookSecret.js";
@@ -21,6 +21,15 @@ export function WebhookStep({
   // Next and Test Connection both keep it when this field is blank, so the
   // copy has to say so rather than promise "unsigned".
   const secretConfigured = Boolean(cfg.data?.config.webhook?.secretConfigured);
+  // Hydrate the URL from a stored webhook once, so revisiting this step
+  // offers "Next" (keep) instead of "Skip" (which sends webhook=null and
+  // would delete the stored URL + secret). Never clobber a value the user
+  // has already typed.
+  const urlTouched = useRef(false);
+  useEffect(() => {
+    const stored = cfg.data?.config.webhook?.url;
+    if (stored && !urlTouched.current) setUrl(stored);
+  }, [cfg.data]);
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     statusCode?: number;
@@ -91,7 +100,7 @@ export function WebhookStep({
             type="url"
             placeholder="https://api.yourdomain.com/webhooks/rootscribe"
             value={url}
-            onChange={(e) => { setUrl(e.target.value); setTestResult(null); }}
+            onChange={(e) => { urlTouched.current = true; setUrl(e.target.value); setTestResult(null); }}
           />
         </div>
 

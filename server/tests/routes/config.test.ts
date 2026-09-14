@@ -178,6 +178,17 @@ describe("POST /api/config (validation)", () => {
     expect(get.body.config.webhook).not.toHaveProperty("secret");
   });
 
+  it("reports secretConfigured=false for a hand-edited non-string secret (matches the unsigned delivery path)", async () => {
+    // Copilot review on PR #19 round 5: the delivery path sends unsigned for
+    // a non-string secret, so Settings must not claim one is configured.
+    updateConfig({
+      webhook: { url: "https://hook.example.com/in", enabled: true, secret: 12345 as unknown as string },
+    });
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook.secretConfigured).toBe(false);
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+  });
+
   it("keeps the stored secret when a POST omits webhook.secret (unrelated edits must not wipe it)", async () => {
     await request(app)
       .post("/api/config")

@@ -86,8 +86,20 @@ export function ensureInstanceId(): string {
     );
     return instanceId;
   }
-  saveConfig({ ...cfg, instanceId });
-  logger.info({ instanceId }, "generated instance id for outbound webhooks");
+  try {
+    saveConfig({ ...cfg, instanceId });
+    logger.info({ instanceId }, "generated instance id for outbound webhooks");
+  } catch (err) {
+    // A read-only file or full disk must not become a startup crash (this
+    // runs before listen()) or a delivery outage (it runs inside fireRaw's
+    // try, before fetch). Keep the id in memory — stable for the process —
+    // and let the operator fix persistence separately.
+    cached = { ...cfg, instanceId };
+    logger.error(
+      { err, instanceId, path: settingsPath() },
+      "could not persist the generated instance id — using it in memory for this process only",
+    );
+  }
   return instanceId;
 }
 
