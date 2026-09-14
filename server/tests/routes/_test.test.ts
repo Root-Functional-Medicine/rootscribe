@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import request from "supertest";
 import Database from "better-sqlite3";
 import path from "node:path";
-import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
+import { cleanupTempDir, mkTempConfigDir, startTestServer } from "../helpers/test-server.js";
 import { seedInitialState } from "../../src/test-seed/fixtures.js";
 
 // Capture original env + establish a seeded config dir BEFORE importing any
@@ -17,7 +17,7 @@ const { testRouter } = await import("../../src/routes/_test.js");
 const { resetDbSingleton } = await import("../../src/db.js");
 const { resetConfigCache } = await import("../../src/config.js");
 
-const app = makeTestApp((a) => a.use("/api/_test", testRouter));
+const app = startTestServer((a) => a.use("/api/_test", testRouter));
 
 afterAll(() => {
   resetDbSingleton();
