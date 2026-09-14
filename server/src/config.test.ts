@@ -128,3 +128,35 @@ describe("ensureInstanceId — malformed settings.json is never overwritten", ()
     resetConfigCache();
   });
 });
+
+describe("ensureInstanceId — persisted value is validated like the API input", () => {
+  it("re-mints and persists a safe id when settings.json holds a header-unsafe value", async () => {
+    // Copilot review on PR #19 round 2: a hand-edited settings.json with a
+    // control character would be stamped verbatim into x-rootscribe-instance,
+    // where undici rejects it and every delivery fails. The persisted value
+    // must pass the same [A-Za-z0-9._:-]{1,128} rule POST /api/config enforces.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, JSON.stringify({ instanceId: "bad\nid" }));
+
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const id = ensureInstanceId();
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    resetConfigCache();
+    expect(loadConfig().instanceId).toBe(id);
+    resetConfigCache();
+  });
+
+  it("re-mints when the persisted value is over 128 characters or empty", async () => {
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    for (const bad of ["a".repeat(129), "", "two words"]) {
+      writeFileSync(path.join(tmpDir, "settings.json"), JSON.stringify({ instanceId: bad }));
+      resetConfigCache();
+      expect(ensureInstanceId(), `expected re-mint for ${JSON.stringify(bad)}`).toMatch(
+        /^[0-9a-f-]{36}$/,
+      );
+    }
+    resetConfigCache();
+  });
+});

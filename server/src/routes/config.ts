@@ -8,7 +8,7 @@ import {
   statfsSync,
 } from "node:fs";
 import path from "node:path";
-import type { AppConfig } from "@rootscribe/shared";
+import { INSTANCE_ID_PATTERN, type AppConfig } from "@rootscribe/shared";
 import { loadConfig, updateConfig } from "../config.js";
 import { testWebhook } from "../webhook/post.js";
 import { poller } from "../sync/poller.js";
@@ -65,18 +65,15 @@ const PatchSchema = z.object({
     }, "jiraBaseUrl must use http or https")
     .optional(),
   // Sent verbatim as the `x-rootscribe-instance` header on every outbound
-  // webhook. Restrict to a conservative header-safe token: undici's fetch
-  // throws on control characters / non-Latin-1 bytes, which would break
-  // every delivery, and spaces make the value awkward to match on the
-  // receiving side.
+  // webhook — see INSTANCE_ID_PATTERN in @rootscribe/shared for why it is
+  // restricted to a header-safe token. The same rule guards the persisted
+  // value in ensureInstanceId().
   instanceId: z
     .string()
     .trim()
-    .min(1)
-    .max(128)
     .regex(
-      /^[A-Za-z0-9._:-]+$/,
-      "instanceId may only contain letters, digits, '.', '_', ':' and '-'",
+      INSTANCE_ID_PATTERN,
+      "instanceId must be 1-128 characters of letters, digits, '.', '_', ':' and '-'",
     )
     .optional(),
 });
@@ -94,15 +91,24 @@ configRouter.post("/", (req, res) => {
   const storedSecret = loadConfig().webhook?.secret;
   const nextSecret =
     patch.webhook?.secret === undefined ? storedSecret : patch.webhook.secret || undefined;
-  const normalized = {
-    ...patch,
-    webhook: patch.webhook
+  // Only touch `webhook` when the patch carries it. Spreading an explicit
+  // `webhook: undefined` into updateConfig() would overwrite the stored
+  // object — a partial patch (jiraBaseUrl-only, pollIntervalMinutes-only)
+  // must leave the URL and secret exactly as they were.
+  const { webhook: _patchWebhook, ...rest } = patch;
+  const normalized: Partial<AppConfig> = {
+    ...rest,
+    ...(patch.webhook !== undefined
       ? {
-          url: patch.webhook.url,
-          enabled: patch.webhook.enabled ?? patch.webhook.url.length > 0,
-          ...(nextSecret ? { secret: nextSecret } : {}),
+          webhook: patch.webhook
+            ? {
+                url: patch.webhook.url,
+                enabled: patch.webhook.enabled ?? patch.webhook.url.length > 0,
+                ...(nextSecret ? { secret: nextSecret } : {}),
+              }
+            : null,
         }
-      : patch.webhook,
+      : {}),
   };
   const next = updateConfig(normalized);
   res.json({ config: redactForClient(next) });

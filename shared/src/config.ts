@@ -44,6 +44,18 @@ export interface AppConfig {
   instanceId: string | null;
 }
 
+// `instanceId` is stamped verbatim into the `x-rootscribe-instance` header,
+// so it must be a conservative header-safe token: undici's fetch throws on
+// control characters / non-Latin-1 bytes (which would break EVERY delivery),
+// and spaces make the value awkward to match on the receiving side. Enforced
+// on API input (POST /api/config) AND on the persisted value (the server
+// re-mints a UUID when a hand-edited settings.json fails this check).
+export const INSTANCE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+export function isValidInstanceId(value: unknown): value is string {
+  return typeof value === "string" && INSTANCE_ID_PATTERN.test(value);
+}
+
 export const DEFAULT_CONFIG: AppConfig = {
   version: 1,
   setupComplete: false,

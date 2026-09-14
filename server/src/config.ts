@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_CONFIG, type AppConfig } from "@rootscribe/shared";
+import { DEFAULT_CONFIG, isValidInstanceId, type AppConfig } from "@rootscribe/shared";
 import { ensureConfigDir, settingsPath } from "./paths.js";
 import { logger } from "./logger.js";
 
@@ -59,7 +59,9 @@ export function updateConfig(patch: Partial<AppConfig>): AppConfig {
  * shows up in Settings immediately, and again by every outbound webhook so
  * `x-rootscribe-instance` is present even if settings.json was hand-edited
  * to drop the field. Idempotent: an existing (possibly operator-chosen)
- * value is returned untouched.
+ * value is returned untouched — provided it passes the same header-safe
+ * check POST /api/config enforces; a hand-edited value that fails it would
+ * make undici reject every delivery, so it is replaced by a fresh UUID.
  *
  * When settings.json exists but failed to parse, the id is minted in memory
  * only (stable for this process) and NOT persisted — writing defaults plus a
@@ -68,7 +70,13 @@ export function updateConfig(patch: Partial<AppConfig>): AppConfig {
  */
 export function ensureInstanceId(): string {
   const cfg = loadConfig();
-  if (cfg.instanceId) return cfg.instanceId;
+  if (isValidInstanceId(cfg.instanceId)) return cfg.instanceId;
+  if (cfg.instanceId != null) {
+    logger.warn(
+      { instanceId: cfg.instanceId },
+      "persisted instanceId is not a header-safe token — replacing it with a generated id",
+    );
+  }
   const instanceId = randomUUID();
   if (loadFailed) {
     cached = { ...cfg, instanceId };

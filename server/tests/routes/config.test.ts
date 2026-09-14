@@ -220,6 +220,35 @@ describe("POST /api/config (validation)", () => {
     expect(loadConfig().webhook?.secret).toBe("new");
   });
 
+  // Copilot review on PR #19 round 2: the normalizer always set `webhook`,
+  // so a partial patch that omitted it (JiraStep saves only jiraBaseUrl
+  // right after WebhookStep) spread `webhook: undefined` over the stored
+  // object and silently wiped the URL + freshly saved secret.
+  it("preserves the stored webhook (including its secret) when a patch omits webhook entirely", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "keep-me" } });
+
+    const jira = await request(app)
+      .post("/api/config")
+      .send({ jiraBaseUrl: "https://example.atlassian.net/browse/" });
+    expect(jira.status).toBe(200);
+    expect(jira.body.config.webhook).toMatchObject({
+      url: "https://hook.example.com/in",
+      enabled: true,
+      secretConfigured: true,
+    });
+
+    const poll = await request(app).post("/api/config").send({ pollIntervalMinutes: 7 });
+    expect(poll.status).toBe(200);
+
+    expect(loadConfig().webhook).toEqual({
+      url: "https://hook.example.com/in",
+      enabled: true,
+      secret: "keep-me",
+    });
+  });
+
   it("drops the secret entirely when the webhook is cleared to null", async () => {
     await request(app)
       .post("/api/config")
