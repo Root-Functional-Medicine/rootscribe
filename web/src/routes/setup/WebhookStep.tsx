@@ -228,7 +228,14 @@ export function WebhookStep({
       </div>
 
       {url.trim() && (
-        <button className="btn-primary px-6 py-3" onClick={() => void test()} disabled={testing || saving}>
+        <button
+          className="btn-primary px-6 py-3"
+          onClick={() => void test()}
+          // Gated on the config query like Next/Skip: a blank draft secret is
+          // sent as "use the stored one", so the stored state must be known
+          // before a test can be signed.
+          disabled={testing || saving || cfg.isPending || cfg.isFetching}
+        >
           {testing ? "Testing…" : "Test Connection"}
         </button>
       )}

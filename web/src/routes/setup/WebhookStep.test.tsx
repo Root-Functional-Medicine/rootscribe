@@ -56,6 +56,15 @@ function routeWebhookFetch(
   });
 }
 
+
+// Test Connection is gated on the config query (like Next/Skip), so wait for
+// it to enable before clicking — the GET resolves asynchronously after render.
+async function clickTestConnection(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  const button = screen.getByRole("button", { name: /test connection/i });
+  await waitFor(() => expect(button).toBeEnabled());
+  await user.click(button);
+}
+
 describe("WebhookStep — test connection", () => {
   let stub: ReturnType<typeof stubFetch>;
   beforeEach(() => {
@@ -105,9 +114,7 @@ describe("WebhookStep — test connection", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "https://hook.example",
     );
-    await user.click(
-      screen.getByRole("button", { name: /test connection/i }),
-    );
+    await clickTestConnection(user);
     expect(
       await screen.findByText(/connection success/i),
     ).toBeInTheDocument();
@@ -129,9 +136,7 @@ describe("WebhookStep — test connection", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "  https://hook.example  ",
     );
-    await user.click(
-      screen.getByRole("button", { name: /test connection/i }),
-    );
+    await clickTestConnection(user);
 
     await waitFor(() => {
       const post = stub.fetch.mock.calls.find(([i]) =>
@@ -157,9 +162,7 @@ describe("WebhookStep — test connection", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "https://hook.example",
     );
-    await user.click(
-      screen.getByRole("button", { name: /test connection/i }),
-    );
+    await clickTestConnection(user);
     expect(
       await screen.findByText(/connection failed/i),
     ).toBeInTheDocument();
@@ -182,9 +185,7 @@ describe("WebhookStep — test connection", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "https://hook.example",
     );
-    await user.click(
-      screen.getByRole("button", { name: /test connection/i }),
-    );
+    await clickTestConnection(user);
     expect(
       await screen.findByText(/DNS resolution failed/i),
     ).toBeInTheDocument();
@@ -200,9 +201,7 @@ describe("WebhookStep — test connection", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "https://hook.example",
     );
-    await user.click(
-      screen.getByRole("button", { name: /test connection/i }),
-    );
+    await clickTestConnection(user);
     await screen.findByText(/connection success/i);
 
     await user.type(
@@ -633,7 +632,7 @@ describe("WebhookStep — signing secret + instance id", () => {
       expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://old.example"),
     );
 
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
     void qc.invalidateQueries({ queryKey: ["config"] });
     await waitFor(() => expect(resolveRefetch).not.toBeNull());
     resolveRefetch!(
@@ -650,6 +649,22 @@ describe("WebhookStep — signing secret + instance id", () => {
     resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps Test Connection disabled until the config query has settled (unknown stored secret must not sign a test)", async () => {
+    // Copilot review on PR #19 round 16 (suppressed finding): with the query
+    // pending, a blank draft secret is sent as undefined and the server signs
+    // with whatever is stored — while the UI still shows the "unsigned" hint.
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") return new Promise(() => undefined);
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+    expect(screen.getByRole("button", { name: /test connection/i })).toBeDisabled();
   });
 
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
@@ -701,7 +716,7 @@ describe("WebhookStep — signing secret + instance id", () => {
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
     await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
 
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
     await user.type(screen.getByLabelText(/signing secret/i), "changed");
     resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
 
@@ -839,7 +854,7 @@ describe("WebhookStep — signing secret + instance id", () => {
       "https://hook.example",
     );
     await user.type(screen.getByLabelText(/signing secret/i), "  draft-secret  ");
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
 
     await waitFor(() => {
       const post = stub.fetch.mock.calls.find(([i]) =>
@@ -862,12 +877,12 @@ describe("WebhookStep — signing secret + instance id", () => {
       "https://hook.example",
     );
 
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
     await screen.findByText(/connection success/i);
     await user.type(screen.getByLabelText(/signing secret/i), "s");
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
 
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
     await screen.findByText(/connection success/i);
     await user.click(screen.getByRole("button", { name: /generate/i }));
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
@@ -882,7 +897,7 @@ describe("WebhookStep — signing secret + instance id", () => {
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "https://hook.example",
     );
-    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await clickTestConnection(user);
 
     await waitFor(() => {
       const post = stub.fetch.mock.calls.find(([i]) =>
