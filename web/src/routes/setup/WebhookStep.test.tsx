@@ -485,6 +485,48 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
   });
 
+  it("after a refetch error with a hydrated (untouched) URL, Next proceeds WITHOUT re-posting the possibly stale webhook", async () => {
+    // Copilot review on PR #19 round 11 (suppressed finding): cached data
+    // hydrates url, the refetch fails, isFetching drops to false and Next is
+    // enabled — posting the cached URL back could resurrect a webhook the
+    // server has since removed or changed. Untouched + error = nothing to
+    // save.
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    const qc = createTestQueryClient();
+    qc.setQueryData(["config"], {
+      config: appConfigFactory
+        .authenticated()
+        .withWebhook({ url: "https://cached.example/ingest", enabled: true })
+        .build(),
+    });
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ config: {} }));
+    });
+    renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />, { queryClient: qc });
+
+    const next = screen.getByRole("button", { name: /^next$/i });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+    const posted = stub.fetch.mock.calls.some(
+      ([i, init]) =>
+        String(i) === "/api/config" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(posted).toBe(false);
+  });
+
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();

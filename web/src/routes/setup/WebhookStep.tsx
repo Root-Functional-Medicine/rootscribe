@@ -74,6 +74,13 @@ export function WebhookStep({
   };
 
   const saveAndContinue = async (): Promise<void> => {
+    // Stored state is unknown (query failed) and the user changed nothing:
+    // a hydrated URL may be stale cached data, so re-posting it could
+    // resurrect a webhook the server has since removed. Nothing to save.
+    if (cfg.isError && !urlTouched.current && secret.trim() === "") {
+      onNext();
+      return;
+    }
     if (url.trim() === "") {
       // A blank URL means "no webhook" only when we KNOW that is the stored
       // state (config loaded) or the user deliberately cleared it. If the
