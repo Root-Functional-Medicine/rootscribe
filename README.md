@@ -13,7 +13,7 @@ A self-hosted local server that mirrors your [Plaud](https://plaud.ai) recording
 - **Audio player** — custom player with waveform visualization, play/pause, skip -10s/+30s, click-to-seek
 - **Transcript viewer** — speaker-labeled, timestamped, color-coded blocks with auto-scroll during playback, click-to-seek, and full-text search within transcripts
 - **AI summaries** — rendered markdown with expandable full-screen modal for long summaries
-- **Webhooks** — POST JSON payloads on `audio_ready` and `transcript_ready` events for n8n, Zapier, or custom integrations
+- **Webhooks** — POST JSON payloads on `audio_ready` and `transcript_ready` events for n8n, Zapier, or custom integrations; HMAC-SHA256 signed when a secret is configured, and always stamped with an instance id
 - **Dark & light mode** — toggle between themes, defaults to system preference
 - **Setup wizard** — guided 5-step onboarding (auth, folder, webhook, review)
 
@@ -85,6 +85,7 @@ Each recording gets its own folder under your chosen recordings directory:
     "id": "74560101636422f79bacd66696bab17b",
     "filename": "04-11 Validation of Automated Transcription...",
     "start_time_ms": 1775929909000,
+    "end_time_ms": 1775929931000,
     "duration_ms": 22000,
     "filesize_bytes": 95744,
     "serial_number": "8810B30227298497"
@@ -109,7 +110,44 @@ Each recording gets its own folder under your chosen recordings directory:
 
 - `content` is only present on `transcript_ready` events. Both fields are nullable — if Plaud didn't generate a summary for a recording, `summary_markdown` will be `null`.
 - Webhook consumers should treat `(id, event)` as idempotent. `audio_ready` always fires before `transcript_ready`; on recordings that are already fully transcribed when first seen, both fire back-to-back in the same poll cycle.
-- Custom headers on every webhook: `User-Agent: rootscribe/0.1.1` and `X-RootScribe-Event: audio_ready|transcript_ready`.
+- Custom headers on every webhook: `User-Agent: rootscribe/0.1.1`, `X-RootScribe-Event: audio_ready|transcript_ready`, and `X-RootScribe-Instance: <instance id>`. When a signing secret is configured, `X-RootScribe-Timestamp` and `X-RootScribe-Signature` are added too — see [Webhook signing](#webhook-signing).
+- The Settings "Test" button and the wizard's "Test Connection" send the same headers plus `X-RootScribe-Test: 1`, with a `"test": true` marker in the body.
+
+## Webhook signing
+
+Set a **Signing Secret** in Settings → Webhook Outbound (or in the setup wizard's webhook step; the **Generate** button mints a 64-hex-char value). Once set, every delivery — including test deliveries — carries:
+
+| Header | Value |
+|---|---|
+| `X-RootScribe-Instance` | This install's instance id. Generated as a UUID on first run and editable in Settings, so one receiver can tell several RootScribe instances apart. Always sent, signed or not. |
+| `X-RootScribe-Timestamp` | Unix time in **seconds** when this delivery attempt was made. Recomputed per retry. |
+| `X-RootScribe-Signature` | `t=<timestamp>,v1=<hex>` where `v1` is `HMAC-SHA256(secret, "<timestamp>.<raw body>")`, lowercase hex. |
+
+The signed string is the timestamp, a literal `.`, then the **exact request body bytes** — so verify against the raw body, not a re-serialized copy. Without a secret, only the instance header is sent and the server logs a one-time warning on the first unsigned delivery.
+
+Verification in Node:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+const TOLERANCE_SEC = 300; // reject deliveries older than 5 minutes (replay protection)
+
+export function verifyRootscribeSignature({ secret, rawBody, headers, nowSec = Math.floor(Date.now() / 1000) }) {
+  const header = headers["x-rootscribe-signature"];
+  if (!header) return false;
+
+  const parts = Object.fromEntries(header.split(",").map((kv) => kv.split("=")));
+  const t = Number(parts.t);
+  if (!Number.isFinite(t) || Math.abs(nowSec - t) > TOLERANCE_SEC) return false;
+
+  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
+  const received = Buffer.from(parts.v1 ?? "", "hex");
+  const wanted = Buffer.from(expected, "hex");
+  return received.length === wanted.length && timingSafeEqual(received, wanted);
+}
+```
+
+With Express, keep the raw body around before JSON parsing, e.g. `express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } })`, then call `verifyRootscribeSignature({ secret, rawBody: req.rawBody, headers: req.headers })`. Deliveries are retried with 5s / 30s backoff, so a tolerance of at least a minute or two avoids rejecting legitimate retries.
 
 ## n8n workflows
 
@@ -160,7 +198,7 @@ RootScribe is a foreground process. To keep it running without a terminal:
 
 Settings live in `~/.config/rootscribe/settings.json` (or `~/Library/Application Support/rootscribe/` on macOS, `%APPDATA%\rootscribe\` on Windows). Recording state is in `state.sqlite` alongside. Both are managed through the web UI — you shouldn't need to edit them by hand.
 
-The bearer token is stored as plaintext in `settings.json` (with `chmod 600`). The file lives in a user-only directory, and the token's scope is equivalent to "read this user's own Plaud data." OS keychain integration is a future enhancement.
+The bearer token is stored as plaintext in `settings.json` (with `chmod 600`). The file lives in a user-only directory, and the token's scope is equivalent to "read this user's own Plaud data." OS keychain integration is a future enhancement. The webhook signing secret (`webhook.secret`) and the install's `instanceId` live in the same file.
 
 ## Development
 
