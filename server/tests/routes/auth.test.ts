@@ -2,7 +2,12 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import request from "supertest";
 import type { Server } from "node:http";
 import type { WatchEvent, Listener } from "../../src/auth/browser-watch.js";
-import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
+import {
+  cleanupTempDir,
+  makeTestApp,
+  mkTempConfigDir,
+  startTestServer,
+} from "../helpers/test-server.js";
 
 // Capture + reset ROOTSCRIBE_CONFIG_DIR so this suite's disposable temp
 // directory doesn't leak into the user's real config.
@@ -45,7 +50,7 @@ const { plaudFetch, PlaudAuthError } = await import(
   "../../src/plaud/client.js"
 );
 
-const app = makeTestApp((a) => a.use("/api/auth", authRouter));
+const app = startTestServer((a) => a.use("/api/auth", authRouter));
 
 // JWT fixture with recognizable payload fields — `eyJ...` triple-segment
 // format that extractJwt's regex matches, plus a base64-encoded payload

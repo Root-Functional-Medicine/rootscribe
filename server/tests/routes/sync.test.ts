@@ -23,7 +23,12 @@ vi.mock("../../src/sync/events.js", () => ({ syncEvents: syncEventsMock }));
 vi.mock("../../src/sync/state.js", () => stateMock);
 
 const { syncRouter } = await import("../../src/routes/sync.js");
-const { makeTestApp } = await import("../helpers/test-server.js");
+const { makeTestApp, startTestServer } = await import("../helpers/test-server.js");
+
+// One loopback-bound server for the request/response routes. The SSE
+// describe below boots its own per-test server because streams need an
+// afterEach teardown, not a file-level one.
+const app = startTestServer((a) => a.use("/api/sync", syncRouter));
 
 // Poll `predicate` every `intervalMs` until it returns true or `timeoutMs`
 // elapses. Prefer this over fixed setTimeouts in async assertions — a hard
@@ -66,7 +71,6 @@ describe("GET /api/sync/status", () => {
     stateMock.countPendingTranscripts.mockReturnValue(3);
     stateMock.countErrorsLast24h.mockReturnValue(1);
 
-    const app = makeTestApp((a) => a.use("/api/sync", syncRouter));
     const res = await request(app).get("/api/sync/status");
 
     expect(res.status).toBe(200);
@@ -95,7 +99,6 @@ describe("GET /api/sync/status", () => {
     stateMock.countPendingTranscripts.mockReturnValue(0);
     stateMock.countErrorsLast24h.mockReturnValue(5);
 
-    const app = makeTestApp((a) => a.use("/api/sync", syncRouter));
     const res = await request(app).get("/api/sync/status");
 
     expect(res.status).toBe(200);
@@ -112,7 +115,6 @@ describe("POST /api/sync/trigger", () => {
   it("awaits poller.trigger() and returns { ok: true } on success", async () => {
     pollerMock.trigger.mockResolvedValueOnce(undefined);
 
-    const app = makeTestApp((a) => a.use("/api/sync", syncRouter));
     const res = await request(app).post("/api/sync/trigger");
 
     expect(res.status).toBe(200);
@@ -123,7 +125,6 @@ describe("POST /api/sync/trigger", () => {
   it("propagates poller.trigger() errors as 500 (Express default handler)", async () => {
     pollerMock.trigger.mockRejectedValueOnce(new Error("plaud down"));
 
-    const app = makeTestApp((a) => a.use("/api/sync", syncRouter));
     // Silence Express's default console error for the duration of this test.
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const res = await request(app).post("/api/sync/trigger");
@@ -164,9 +165,9 @@ describe("GET /api/sync/events (SSE)", () => {
   // the connection open via its http Agent, which is exactly what we want to
   // assert on Content-Type + initial data frame.
   async function boot(): Promise<void> {
-    const app = makeTestApp((a) => a.use("/api/sync", syncRouter));
+    const bootApp = makeTestApp((a) => a.use("/api/sync", syncRouter));
     await new Promise<void>((resolve) => {
-      server = app.listen(0, "127.0.0.1", () => resolve());
+      server = bootApp.listen(0, "127.0.0.1", () => resolve());
     });
     const addr = server.address();
     if (typeof addr === "string" || addr === null) throw new Error("no address");

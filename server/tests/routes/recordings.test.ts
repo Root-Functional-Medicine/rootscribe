@@ -4,8 +4,8 @@ import { existsSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
   cleanupTempDir,
-  makeTestApp,
   mkTempConfigDir,
+  startTestServer,
 } from "../helpers/test-server.js";
 
 // Freeze Date.now() to a moment WITHIN the seed fixture's window so the
@@ -24,7 +24,7 @@ const { recordingsRouter } = await import("../../src/routes/recordings.js");
 const { resetDbSingleton } = await import("../../src/db.js");
 const { resetConfigCache } = await import("../../src/config.js");
 
-const app = makeTestApp((a) => a.use("/api/recordings", recordingsRouter));
+const app = startTestServer((a) => a.use("/api/recordings", recordingsRouter));
 
 beforeAll(() => {
   // Only fake Date — supertest's internal timers need to keep firing at

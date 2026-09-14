@@ -3,7 +3,7 @@ import request from "supertest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { AppConfig } from "@rootscribe/shared";
-import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
+import { cleanupTempDir, mkTempConfigDir, startTestServer } from "../helpers/test-server.js";
 
 // The testWebhook + poller imports inside routes/config.ts reach into
 // other modules that make real network or start real timers. Mock them
@@ -36,7 +36,7 @@ const { loadConfig, resetConfigCache, updateConfig } = await import(
 const { testWebhook } = await import("../../src/webhook/post.js");
 const { poller } = await import("../../src/sync/poller.js");
 
-const app = makeTestApp((a) => a.use("/api/config", configRouter));
+const app = startTestServer((a) => a.use("/api/config", configRouter));
 
 // File-level afterAll: runs AFTER every describe block in this file has
 // finished. server/src/paths.ts reads ROOTSCRIBE_CONFIG_DIR on every call, so if
