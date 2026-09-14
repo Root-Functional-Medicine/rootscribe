@@ -5,6 +5,50 @@ All notable changes to RootScribe are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-09-14
+
+Minor release: outbound webhooks can now be verified by their receivers.
+Phase 3c of the Rootstock integration epic (DEVX-1001).
+
+### Added
+
+- **HMAC-SHA256 webhook signing — DEVX-1016.** When a webhook secret is
+  configured, every outbound delivery — the `audio_ready` /
+  `transcript_ready` fires and the Settings "Test" send alike — carries
+  `x-rootscribe-timestamp` (Unix seconds) and
+  `x-rootscribe-signature: t=<sec>,v1=<hex>`, where `v1` is the
+  HMAC-SHA256 of `${t}.${body}` over the exact JSON bytes sent. The
+  timestamp is recomputed per retry attempt so a delivery after the
+  5s/30s backoff still lands inside a receiver's tolerance window.
+  Primitive lives in `server/src/webhook/sign.ts`.
+- **Instance id — DEVX-1016.** New `AppConfig.instanceId`, minted as a
+  UUID on first run (`ensureInstanceId()`) and sent as
+  `x-rootscribe-instance` on every delivery, signed or not, so one
+  receiver can tell several developers' instances apart. Editable in
+  Settings; `POST /api/config` validates it as a header-safe token
+  (1..128 chars of `[A-Za-z0-9._:-]`).
+- **Settings + wizard UI — DEVX-1016.** Settings → Webhook Outbound gains a
+  Signing Secret input with a Generate button (32 CSPRNG bytes as hex)
+  and an editable Instance ID field. The setup wizard's webhook step gets
+  the same secret input plus a read-only instance id display.
+- **README "Webhook signing" section** with the header table and a Node
+  verification recipe (timing-safe compare + replay tolerance).
+- Playwright journey covering secret + instance id persistence through
+  Settings; Vitest coverage for signing, header matrix, per-attempt
+  re-signing, the log-once unsigned warning, and route validation.
+
+### Changed
+
+- Without a secret, the server now logs a one-time warning on the first
+  unsigned delivery so operators know receivers cannot verify origin.
+- Outbound webhook `User-Agent` is `rootscribe/0.2.0`; the inbox MCP
+  server advertises version `0.2.0`.
+
+### Fixed
+
+- README webhook payload example was missing `end_time_ms`, which the
+  code has always sent.
+
 ## [0.1.1] — 2026-05-16
 
 First tagged release. Hotfix on top of the unreleased `0.1.0` baseline so
@@ -177,6 +221,7 @@ Notable compatibility fixes that rode along with the upgrade:
   clone (handled by `scripts/dev-setup.sh`) to prevent `gh` from defaulting
   to the upstream fork.
 
+[0.2.0]: https://github.com/Root-Functional-Medicine/rootscribe/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/Root-Functional-Medicine/rootscribe/releases/tag/v0.1.1
 <!-- [0.1.0] is intentionally unlinked: that version was never tagged. -->
 <!-- It's documented above as the unreleased pre-hotfix baseline only. -->

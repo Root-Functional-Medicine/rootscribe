@@ -13,7 +13,7 @@ const BACKOFF_MS = [5_000, 30_000, 120_000];
 // Advertised on every outbound delivery. Kept in lockstep with package.json
 // by the release checklist (see CHANGELOG); deriving it at build time is a
 // DEVX-314 follow-up.
-const USER_AGENT = "rootscribe/0.1.1";
+const USER_AGENT = "rootscribe/0.2.0";
 
 // Latch so the "unsigned" warning is logged once per process, not once per
 // delivery — a long-running install without a secret would otherwise spam
