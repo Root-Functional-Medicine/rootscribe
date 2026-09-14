@@ -14,8 +14,10 @@ export interface WebhookConfig {
   // is tri-state: omitted = keep the stored secret, "" = clear it, non-empty
   // = replace it.
   secret?: string;
-  // Response-only: whether a secret is stored. The server strips it from
-  // incoming patches (Zod drops unknown keys) and never persists it.
+  // Response-only flag: true when a non-empty string secret is stored. The
+  // secret itself IS accepted and persisted on POST (see above); this flag
+  // is the read side. PatchSchema does not list `secretConfigured`, so Zod
+  // drops it if a client echoes it back — it is never persisted.
   secretConfigured?: boolean;
 }
 

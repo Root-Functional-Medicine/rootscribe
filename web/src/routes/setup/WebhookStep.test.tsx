@@ -237,6 +237,9 @@ describe("WebhookStep — save + navigation", () => {
     renderWithProviders(
       <WebhookStep onNext={onNext} onBack={vi.fn()} />,
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^skip$/i })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("button", { name: /^skip$/i }));
 
     await waitFor(() => {
@@ -267,6 +270,9 @@ describe("WebhookStep — save + navigation", () => {
     await user.type(
       screen.getByPlaceholderText(/api\.yourdomain\.com/i),
       "  https://hook.example  ",
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled(),
     );
     await user.click(screen.getByRole("button", { name: /^next$/i }));
 
@@ -310,6 +316,9 @@ describe("WebhookStep — save + navigation", () => {
       screen.queryByRole("button", { name: /test connection/i }),
     ).not.toBeInTheDocument();
 
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^skip$/i })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("button", { name: /^skip$/i }));
 
     await waitFor(() => {
@@ -422,6 +431,50 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://typed.example");
   });
 
+  it("disables the primary button until the config query has settled, so Skip cannot fire on unknown stored state", async () => {
+    // Copilot review on PR #19 round 6: clicking Skip before /api/config
+    // resolved left url="" and posted webhook=null — deleting a stored URL
+    // and secret on a resumed wizard.
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") return new Promise(() => undefined);
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    expect(screen.getByRole("button", { name: /^skip$/i })).toBeDisabled();
+  });
+
+  it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ config: {} }));
+    });
+    renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />);
+
+    const skip = screen.getByRole("button", { name: /^skip$/i });
+    await waitFor(() => expect(skip).toBeEnabled());
+    await user.click(skip);
+
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+    const posted = stub.fetch.mock.calls.some(
+      ([i, init]) =>
+        String(i) === "/api/config" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(posted).toBe(false);
+  });
+
   it("tells a fresh wizard that a blank field sends unsigned", async () => {
     routeWebhookFetch(stub);
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
@@ -455,6 +508,9 @@ describe("WebhookStep — signing secret + instance id", () => {
       "https://hook.example",
     );
     await user.type(screen.getByLabelText(/signing secret/i), "  whsec_wizard  ");
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled(),
+    );
     await user.click(screen.getByRole("button", { name: /^next$/i }));
 
     await waitFor(() => {

@@ -62,7 +62,13 @@ export function WebhookStep({
 
   const saveAndContinue = async (): Promise<void> => {
     if (url.trim() === "") {
-      await api.updateConfig({ webhook: null });
+      // A blank URL means "no webhook" only when we KNOW that is the stored
+      // state (config loaded) or the user deliberately cleared it. If the
+      // config query failed we cannot tell whether a webhook + secret is
+      // stored, so leave it untouched rather than post webhook=null.
+      if (cfg.isSuccess || urlTouched.current) {
+        await api.updateConfig({ webhook: null });
+      }
     } else {
       const trimmedSecret = secret.trim();
       await api.updateConfig({
@@ -194,7 +200,13 @@ export function WebhookStep({
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="group-hover:-translate-x-1 transition-transform"><path d="M19 12H5" /><path d="M12 19l-7-7 7-7" /></svg>
           Back
         </button>
-        <button className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10" onClick={() => void saveAndContinue()}>
+        <button
+          className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10"
+          // Gated until the config query settles: before that, url may still
+          // be "" for a stored webhook and Skip would delete it.
+          disabled={cfg.isPending}
+          onClick={() => void saveAndContinue()}
+        >
           {url.trim() ? "Next" : "Skip"}
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14" /><path d="M12 5l7 7-7 7" /></svg>
         </button>

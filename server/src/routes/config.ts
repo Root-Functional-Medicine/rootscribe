@@ -24,9 +24,9 @@ function redactForClient(cfg: AppConfig): AppConfig {
   // signs, so only that counts as "configured" — a hand-edited non-string
   // must not make Settings claim verification is active.
   const webhook = cfg.webhook
-    ? (({ secret, ...rest }) => ({
+    ? (({ secret: storedSecret, ...rest }) => ({
         ...rest,
-        secretConfigured: typeof secret === "string" && secret.length > 0,
+        secretConfigured: typeof storedSecret === "string" && storedSecret.length > 0,
       }))(cfg.webhook)
     : cfg.webhook;
   return { ...cfg, token: cfg.token ? "***REDACTED***" : null, webhook };
