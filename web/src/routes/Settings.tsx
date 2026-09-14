@@ -50,8 +50,14 @@ export function Settings(): JSX.Element {
     setTestResult(null);
   };
 
+  // Hydrate the form from the server only while it is clean. The config
+  // query refetches in the background (5s staleTime), and resetting the
+  // fields on every cfg.data change would discard an in-progress edit —
+  // for the write-only secret draft that meant the next Save silently kept
+  // the OLD secret. After a successful save, dirty flips back to false and
+  // the (already refetched) data re-hydrates the form.
   useEffect(() => {
-    if (!cfg.data) return;
+    if (!cfg.data || dirty) return;
     const c = cfg.data.config;
     setWebhookUrl(c.webhook?.url ?? "");
     // Never populated from config — the secret is redacted server-side. A
@@ -61,8 +67,7 @@ export function Settings(): JSX.Element {
     setInstanceId(c.instanceId ?? "");
     setPollMinutes(c.pollIntervalMinutes);
     setJiraBaseUrl(c.jiraBaseUrl ?? "");
-    setDirty(false);
-  }, [cfg.data]);
+  }, [cfg.data, dirty]);
 
   if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   const c = cfg.data?.config;

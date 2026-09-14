@@ -8,7 +8,7 @@ import type {
 } from "@rootscribe/shared";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { Settings } from "./Settings.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import { createTestQueryClient, jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
 import {
   appConfigFactory,
   syncStatusResponseFactory,
@@ -894,6 +894,63 @@ describe("Settings — webhook signing secret + instance id", () => {
     // Give the stale promise every chance to land, then assert it did not.
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("a refetch landing mid-edit does not discard an in-progress secret draft (hydrate only when clean)", async () => {
+    // Copilot review on PR #19 round 12 (suppressed finding): the hydration
+    // effect ran on every cfg.data change, so a background refetch reset
+    // the secret draft to "" and the following Save silently kept the old
+    // secret.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let gets = 0;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({
+              config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+            }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config" && method === "POST") {
+        return Promise.resolve(jsonResponse({ config: makeConfig() }));
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    // Kick off a background refetch and edit while it is in flight.
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    await user.type(screen.getByLabelText(/signing secret/i), "draft-in-progress");
+    resolveRefetch!(
+      jsonResponse({
+        config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("draft-in-progress");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body.webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "draft-in-progress",
+      });
+    });
   });
 
   it("shows a placeholder when the server has not minted an instance id yet", async () => {
