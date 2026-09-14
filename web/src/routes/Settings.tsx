@@ -4,6 +4,22 @@ import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { api } from "../api.js";
 import { generateWebhookSecret } from "../lib/webhookSecret.js";
 
+interface Touched {
+  webhookUrl: boolean;
+  secret: boolean;
+  instanceId: boolean;
+  poll: boolean;
+  jira: boolean;
+}
+
+const NOTHING_TOUCHED: Touched = {
+  webhookUrl: false,
+  secret: false,
+  instanceId: false,
+  poll: false,
+  jira: false,
+};
+
 function formatRelative(ts: number | null): string {
   if (!ts) return "never";
   const diff = Date.now() - ts;
@@ -33,15 +49,22 @@ export function Settings(): JSX.Element {
   // non-empty value replaces it, and clearSecret=true sends "" to drop it.
   const [webhookSecret, setWebhookSecret] = useState("");
   const [clearSecret, setClearSecret] = useState(false);
-  // True once the URL or secret has been edited this session. Only then is
-  // `webhook` included in the save: the server keeps the stored webhook when
-  // the key is omitted, so an unrelated save (poll interval, instance id)
-  // can never re-post a stale cached value — including null — over it.
-  const [webhookTouched, setWebhookTouched] = useState(false);
   const [instanceId, setInstanceId] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
-  const [dirty, setDirty] = useState(false);
+  // Per-field "the user edited this" tracking. It drives two things:
+  //  - hydration: a background refetch re-hydrates every UNTOUCHED field
+  //    from the server and leaves touched drafts alone, so a stale local
+  //    copy of one field is never saved alongside an edit to another;
+  //  - save: only touched fields are sent. The server keeps everything it
+  //    does not receive, so an unrelated save can never overwrite a value
+  //    another client changed (instance id, webhook, ...) with a stale copy.
+  // Cleared after a successful save, at which point the refetched data
+  // re-hydrates the whole form.
+  const [touched, setTouched] = useState<Touched>(NOTHING_TOUCHED);
+  const touch = (field: keyof Touched): void =>
+    setTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  const dirty = Object.values(touched).some(Boolean);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
@@ -55,39 +78,28 @@ export function Settings(): JSX.Element {
     setTestResult(null);
   };
 
-  // Hydrate the form from the server only while it is clean. The config
-  // query refetches in the background (5s staleTime), and resetting the
-  // fields on every cfg.data change would discard an in-progress edit —
-  // for the write-only secret draft that meant the next Save silently kept
-  // the OLD secret. After a successful save, dirty flips back to false and
-  // the (already refetched) data re-hydrates the form.
+  // Hydrate every UNTOUCHED field from the server whenever config data
+  // arrives (initial load and background refetches). Touched drafts are
+  // left alone; the write-only secret draft is never hydrated at all (it is
+  // redacted server-side) and only resets when `touched` is cleared after a
+  // save. The `touched` dependency makes the post-save reset re-hydrate.
   useEffect(() => {
-    if (!cfg.data || dirty) return;
+    if (!cfg.data) return;
     const c = cfg.data.config;
-    // Server data is replacing the draft. If anything a Test stamps (URL,
-    // instance id) actually changes, an in-flight Test described the old
-    // values and must not be rendered as success for the new ones.
-    if ((c.webhook?.url ?? "") !== webhookUrl || (c.instanceId ?? "") !== instanceId) {
-      invalidateTest();
+    if (!touched.webhookUrl) setWebhookUrl(c.webhook?.url ?? "");
+    if (!touched.secret) {
+      setWebhookSecret("");
+      setClearSecret(false);
     }
-    setWebhookUrl(c.webhook?.url ?? "");
-    // Never populated from config — the secret is redacted server-side. A
-    // fresh load resets the draft to "untouched".
-    setWebhookSecret("");
-    setClearSecret(false);
-    setWebhookTouched(false);
-    setInstanceId(c.instanceId ?? "");
-    setPollMinutes(c.pollIntervalMinutes);
-    setJiraBaseUrl(c.jiraBaseUrl ?? "");
-    // webhookUrl / instanceId are read for the change check only; they are
-    // deliberately not dependencies — listing them would re-run hydration
-    // on every keystroke (guarded by `dirty`, but pointless work).
-  }, [cfg.data, dirty]);
+    if (!touched.instanceId) setInstanceId(c.instanceId ?? "");
+    if (!touched.poll) setPollMinutes(c.pollIntervalMinutes);
+    if (!touched.jira) setJiraBaseUrl(c.jiraBaseUrl ?? "");
+  }, [cfg.data, touched]);
 
   // Every completed refetch may reflect a config change another client made
   // — including a secret rotation, which is invisible in the redacted
-  // response — so an in-flight Test can no longer be trusted. Not gated on
-  // `dirty`: the stored state changed regardless of local edits.
+  // response, and a URL/instance id that just re-hydrated above — so an
+  // in-flight Test can no longer be trusted.
   useEffect(() => {
     if (cfg.dataUpdatedAt) invalidateTest();
     // invalidateTest is stable in effect (bumps a ref, clears state).
@@ -114,7 +126,7 @@ export function Settings(): JSX.Element {
       // cleared field for an identifier the server minted.
       const trimmedInstanceId = instanceId.trim();
       await api.updateConfig({
-        ...(webhookTouched
+        ...(touched.webhookUrl || touched.secret
           ? {
               webhook: webhookUrl.trim()
                 ? {
@@ -127,12 +139,12 @@ export function Settings(): JSX.Element {
                 : null,
             }
           : {}),
-        pollIntervalMinutes: pollMinutes,
-        jiraBaseUrl: trimmedJira,
-        ...(trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
+        ...(touched.poll ? { pollIntervalMinutes: pollMinutes } : {}),
+        ...(touched.jira ? { jiraBaseUrl: trimmedJira } : {}),
+        ...(touched.instanceId && trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
-      setDirty(false);
+      setTouched(NOTHING_TOUCHED);
     } catch (err) {
       // Surface server validation errors (e.g. bad Jira URL) inline — without
       // this, the promise rejection would vanish and the user would see no
@@ -284,8 +296,7 @@ export function Settings(): JSX.Element {
               disabled={saving}
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
-                setWebhookTouched(true);
-                setDirty(true);
+                touch("webhookUrl");
                 invalidateTest();
                 // Clear any prior save error so it doesn't linger after the
                 // user starts correcting the value that caused it.
@@ -351,8 +362,7 @@ export function Settings(): JSX.Element {
                 onChange={(e) => {
                   setWebhookSecret(e.target.value);
                   setClearSecret(false);
-                  setWebhookTouched(true);
-                  setDirty(true);
+                  touch("secret");
                   setSaveError(null);
                   // A prior (or in-flight) Test described a different secret.
                   invalidateTest();
@@ -365,8 +375,7 @@ export function Settings(): JSX.Element {
                 onClick={() => {
                   setWebhookSecret(generateWebhookSecret());
                   setClearSecret(false);
-                  setWebhookTouched(true);
-                  setDirty(true);
+                  touch("secret");
                   setSaveError(null);
                   invalidateTest();
                 }}
@@ -381,8 +390,7 @@ export function Settings(): JSX.Element {
                   onClick={() => {
                     setWebhookSecret("");
                     setClearSecret(true);
-                    setWebhookTouched(true);
-                    setDirty(true);
+                    touch("secret");
                     setSaveError(null);
                     invalidateTest();
                   }}
@@ -418,7 +426,7 @@ export function Settings(): JSX.Element {
               disabled={saving}
               onChange={(e) => {
                 setInstanceId(e.target.value);
-                setDirty(true);
+                touch("instanceId");
                 setSaveError(null);
                 // Test stamps this value, so a prior result no longer applies.
                 invalidateTest();
@@ -460,7 +468,7 @@ export function Settings(): JSX.Element {
             disabled={saving}
             onChange={(e) => {
               setPollMinutes(Number(e.target.value));
-              setDirty(true);
+              touch("poll");
               setSaveError(null);
             }}
             className="w-full accent-primary"
@@ -501,7 +509,7 @@ export function Settings(): JSX.Element {
               disabled={saving}
               onChange={(e) => {
                 setJiraBaseUrl(e.target.value);
-                setDirty(true);
+                touch("jira");
                 setSaveError(null);
               }}
             />

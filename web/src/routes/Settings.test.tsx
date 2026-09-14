@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   AppConfig,
@@ -322,6 +322,10 @@ describe("Settings — save button", () => {
     const jiraInput = screen.getByPlaceholderText(DEFAULT_CONFIG.jiraBaseUrl);
     await user.type(jiraInput, "  https://myco.atlassian.net/browse/  ");
 
+    // Only edited fields are sent (per-field touched tracking), so move the
+    // slider too for the pollIntervalMinutes assertion below to apply.
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
+
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
@@ -349,21 +353,19 @@ describe("Settings — save button", () => {
       url: "https://hook.example",
       enabled: true,
     });
-    expect(body.pollIntervalMinutes).toBe(10);
+    expect(body.pollIntervalMinutes).toBe(12);
     // Trimmed Jira URL made it to the wire.
     expect(body.jiraBaseUrl).toBe("https://myco.atlassian.net/browse/");
   });
 
-  it("falls back to DEFAULT_CONFIG.jiraBaseUrl when the Jira field is left blank", async () => {
+  it("falls back to DEFAULT_CONFIG.jiraBaseUrl when the user clears the Jira field", async () => {
     const user = userEvent.setup();
     routeSettingsFetch(stub, {
-      config: makeConfig({ webhook: null, jiraBaseUrl: "" }),
+      config: makeConfig({ webhook: null, jiraBaseUrl: "https://old.atlassian.net/browse/" }),
     });
     renderWithProviders(<Settings />);
-    const webhookInput = await screen.findByPlaceholderText(
-      /api\.yourdomain\.com/i,
-    );
-    await user.type(webhookInput, "https://hook.example");
+    const jiraInput = await screen.findByPlaceholderText(DEFAULT_CONFIG.jiraBaseUrl);
+    await user.clear(jiraInput);
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
@@ -732,6 +734,8 @@ describe("Settings — webhook signing secret + instance id", () => {
       const body = findPost("/api/config");
       expect(body).not.toHaveProperty("webhook");
       expect(body).not.toHaveProperty("instanceId");
+      // Nothing else was edited either.
+      expect(body).toEqual({});
     });
   });
 
@@ -1096,6 +1100,74 @@ describe("Settings — webhook signing secret + instance id", () => {
     resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("sends only the fields the user edited — an untouched instance id is never re-posted", async () => {
+    // Copilot review on PR #19 round 19: instanceId rode along on every
+    // save, so a value changed elsewhere could be overwritten by this
+    // page's stale copy on an unrelated (poll/Jira) save.
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: null, instanceId: "inst-server", pollIntervalMinutes: 10 }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/instance id/i);
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "15" } });
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body).toEqual({ pollIntervalMinutes: 15 });
+    });
+  });
+
+  it("a refetch re-hydrates UNTOUCHED fields while an edited field keeps its draft (no stale URL saved with a new secret)", async () => {
+    // Copilot review on PR #19 round 19: with a page-wide dirty gate, editing
+    // only the secret left the URL stale after a refetch, and Save combined
+    // the stale URL with the new secret.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true }, instanceId: "inst-old" }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config" && method === "POST") return Promise.resolve(jsonResponse({ config: makeConfig() }));
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://new.example", enabled: true }, instanceId: "inst-new" }) }),
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://new.example"),
+    );
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-new");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("new-secret");
+
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body).toEqual({
+        webhook: { url: "https://new.example", enabled: true, secret: "new-secret" },
+      });
+    });
   });
 
   it("shows a placeholder when the server has not minted an instance id yet", async () => {

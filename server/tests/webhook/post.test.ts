@@ -594,6 +594,43 @@ describe("fireWebhookForRecording — signing + instance headers", () => {
     }
   });
 
+  it("each retry attempt carries a FRESH timestamp and signature (headers are not computed once before the loop)", async () => {
+    // Copilot review on PR #19 round 19 (suppressed finding): with Date
+    // real and only timers faked, every attempt could share one second and
+    // a headers-computed-once regression would still pass. Fake Date too
+    // so the 5s / 30s backoff is visible in `t`.
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "Date"] });
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-fresh",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBe(true);
+
+    const stamps = fetchMock.mock.calls.map((call) => {
+      const init = call[1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+      expect(headers["x-rootscribe-timestamp"]).toBe(String(t));
+      expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+      return { t, v1 };
+    });
+    expect(stamps).toHaveLength(3);
+    expect(stamps[1]!.t - stamps[0]!.t).toBe(5);
+    expect(stamps[2]!.t - stamps[1]!.t).toBe(30);
+    expect(new Set(stamps.map((s) => s.v1)).size).toBe(3);
+  });
+
   it("re-signs every retry attempt so a delivery after backoff still verifies", async () => {
     updateConfig({
       webhook: { url: "https://hook.example/ingest", enabled: true, secret },
