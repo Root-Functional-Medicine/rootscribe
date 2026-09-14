@@ -59,6 +59,12 @@ export function Settings(): JSX.Element {
   useEffect(() => {
     if (!cfg.data || dirty) return;
     const c = cfg.data.config;
+    // Server data is replacing the draft. If anything a Test stamps (URL,
+    // instance id) actually changes, an in-flight Test described the old
+    // values and must not be rendered as success for the new ones.
+    if ((c.webhook?.url ?? "") !== webhookUrl || (c.instanceId ?? "") !== instanceId) {
+      invalidateTest();
+    }
     setWebhookUrl(c.webhook?.url ?? "");
     // Never populated from config — the secret is redacted server-side. A
     // fresh load resets the draft to "untouched".
@@ -67,6 +73,9 @@ export function Settings(): JSX.Element {
     setInstanceId(c.instanceId ?? "");
     setPollMinutes(c.pollIntervalMinutes);
     setJiraBaseUrl(c.jiraBaseUrl ?? "");
+    // webhookUrl / instanceId are read for the change check only; they are
+    // deliberately not dependencies — listing them would re-run hydration
+    // on every keystroke (guarded by `dirty`, but pointless work).
   }, [cfg.data, dirty]);
 
   if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;

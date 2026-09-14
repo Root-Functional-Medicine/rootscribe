@@ -989,6 +989,55 @@ describe("Settings — webhook signing secret + instance id", () => {
     await waitFor(() => expect(screen.getByLabelText(/signing secret/i)).toBeEnabled());
   });
 
+  it("a refetch that hydrates DIFFERENT server values discards an in-flight Test result (it described the old values)", async () => {
+    // Copilot review on PR #19 round 14 (suppressed finding): a clean form
+    // is re-hydrated from a background refetch, but a Test started against
+    // the previous URL/instance could still resolve and read as success for
+    // the new values.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true } }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i })); // in flight against old.example
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://new.example", enabled: true } }) }),
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://new.example"),
+    );
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("shows a placeholder when the server has not minted an instance id yet", async () => {
     routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
     renderWithProviders(<Settings />);

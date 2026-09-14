@@ -35,8 +35,20 @@ export function WebhookStep({
   const urlTouched = useRef(false);
   useEffect(() => {
     if (!cfg.data || urlTouched.current) return;
-    setUrl(cfg.data.config.webhook?.url ?? "");
+    const stored = cfg.data.config.webhook?.url ?? "";
+    // A Test Connection started against the previous URL must not render
+    // as success for the newly hydrated one.
+    if (stored !== url) invalidateTest();
+    setUrl(stored);
+    // `url` is read for the change check only and is deliberately not a
+    // dependency (hydration must run on server data, not on keystrokes).
   }, [cfg.data]);
+  // The config query failed and the user has not touched the URL: the
+  // field may show stale cached data. Saving that URL together with a typed
+  // secret could resurrect a webhook the server removed or changed, so the
+  // save is blocked until the user re-enters the URL themselves.
+  const staleUrlRisk = cfg.isError && !urlTouched.current;
+  const saveBlocked = staleUrlRisk && secret.trim() !== "";
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     statusCode?: number;
@@ -181,6 +193,12 @@ export function WebhookStep({
             Generate
           </button>
         </div>
+        {saveBlocked && (
+          <p className="text-[11px] text-error leading-relaxed">
+            Could not load the current settings, so the URL above may be out of date. Re-enter the URL
+            to save it together with this secret.
+          </p>
+        )}
         <p className="text-[11px] text-on-surface-variant leading-relaxed">
           Deliveries are signed with HMAC-SHA256 (<span className="font-mono">x-rootscribe-signature</span>)
           when a secret is set. Paste the same value into your receiver — it is not shown again
@@ -248,7 +266,7 @@ export function WebhookStep({
           // isPending is false as soon as any data is cached, so a remount
           // with stale cached webhook=null during a refetch would otherwise
           // enable a Skip that posts null over a stored webhook.
-          disabled={cfg.isPending || cfg.isFetching || saving}
+          disabled={cfg.isPending || cfg.isFetching || saving || saveBlocked}
           onClick={() => void saveAndContinue()}
         >
           {url.trim() ? "Next" : "Skip"}

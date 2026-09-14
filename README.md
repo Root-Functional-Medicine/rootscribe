@@ -147,7 +147,7 @@ export function verifyRootscribeSignature({ secret, rawBody, headers, nowSec = M
 }
 ```
 
-With Express, keep the raw body around before JSON parsing, e.g. `express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } })`, then call `verifyRootscribeSignature({ secret, rawBody: req.rawBody, headers: req.headers })`. Deliveries are retried with 5s / 30s backoff, so a tolerance of at least a minute or two avoids rejecting legitimate retries.
+With Express, keep the raw body around before JSON parsing, e.g. `express.json({ verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } })`, then call `verifyRootscribeSignature({ secret, rawBody: req.rawBody, headers: req.headers })`. A failed delivery is attempted three times in total, with 5 s and then 30 s between attempts (about 35 s end-to-end, plus network time); each attempt carries a fresh timestamp and signature, so a tolerance of a couple of minutes — the recipe's 300 s is comfortably generous — never rejects a legitimate retry.
 
 ## n8n workflows
 

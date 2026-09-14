@@ -559,6 +559,99 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(posted).toBe(false);
   });
 
+  it("blocks Next when the config failed, the URL is untouched (possibly stale) and a secret was typed", async () => {
+    // Copilot review on PR #19 round 14 (suppressed finding): the stale-URL
+    // guard only covered a blank secret; typing one would post the cached
+    // URL + new secret and could resurrect a removed/changed webhook.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    qc.setQueryData(["config"], {
+      config: appConfigFactory
+        .authenticated()
+        .withWebhook({ url: "https://cached.example/ingest", enabled: true })
+        .build(),
+    });
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({ config: {} }));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+    await waitFor(() => expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled());
+
+    await user.type(screen.getByLabelText(/signing secret/i), "new-secret");
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeDisabled();
+    expect(screen.getByText(/re-enter the url/i)).toBeInTheDocument();
+
+    // Touching the URL makes the draft the user's own again.
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "x");
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled();
+  });
+
+  it("a refetch that hydrates a different stored URL discards an in-flight Test Connection result", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({
+              config: appConfigFactory
+                .authenticated()
+                .withWebhook({ url: "https://old.example", enabled: true })
+                .build(),
+            }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url.includes("/api/config/test-webhook")) {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://old.example"),
+    );
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(
+      jsonResponse({
+        config: appConfigFactory
+          .authenticated()
+          .withWebhook({ url: "https://new.example", enabled: true })
+          .build(),
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://new.example"),
+    );
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();
