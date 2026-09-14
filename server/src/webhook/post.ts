@@ -15,10 +15,28 @@ const BACKOFF_MS = [5_000, 30_000, 120_000];
 // DEVX-314 follow-up.
 const USER_AGENT = "rootscribe/0.2.0";
 
-// Latch so the "unsigned" warning is logged once per process, not once per
-// delivery — a long-running install without a secret would otherwise spam
-// the log on every poll cycle.
+// Latches so each warning is logged once per process, not once per
+// delivery — a long-running install would otherwise spam the log on every
+// poll cycle.
 let warnedUnsigned = false;
+let warnedInvalidSecret = false;
+
+// loadConfig() trusts settings.json's shape, so a hand-edited
+// `"secret": 12345` (or an object) would reach createHmac(), throw inside
+// fireRaw's try, and retry the same broken delivery forever. Only a
+// non-empty string is a usable key; anything else is treated as "no secret"
+// with a one-time warning.
+function usableSecret(secret: unknown): string | undefined {
+  if (typeof secret === "string") return secret || undefined;
+  if (secret != null && !warnedInvalidSecret) {
+    warnedInvalidSecret = true;
+    logger.warn(
+      { type: typeof secret },
+      "persisted webhook secret is not a string — sending deliveries unsigned until it is fixed in Settings",
+    );
+  }
+  return undefined;
+}
 
 /**
  * Headers for one outbound delivery attempt.
@@ -35,12 +53,13 @@ let warnedUnsigned = false;
  *
  * `secret` is the key to sign with — the persisted one for real deliveries,
  * or a caller-supplied draft for test sends (so Settings can verify a value
- * the user has typed but not yet saved). Empty/undefined means unsigned.
+ * the user has typed but not yet saved). Empty/undefined/non-string means
+ * unsigned.
  */
 function deliveryHeaders(
   event: WebhookEvent,
   body: string,
-  secret: string | undefined,
+  rawSecret: unknown,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -48,6 +67,7 @@ function deliveryHeaders(
     "x-rootscribe-event": event,
     "x-rootscribe-instance": ensureInstanceId(),
   };
+  const secret = usableSecret(rawSecret);
   if (secret) {
     const timestampSec = Math.floor(Date.now() / 1000);
     headers["x-rootscribe-timestamp"] = String(timestampSec);

@@ -802,6 +802,32 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
   });
 
+  it("editing, generating, or clearing the secret discards a prior Test result (it no longer describes the draft)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.type(screen.getByLabelText(/signing secret/i), "x");
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("shows a placeholder when the server has not minted an instance id yet", async () => {
     routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
     renderWithProviders(<Settings />);

@@ -382,13 +382,28 @@ describe("POST /api/config/test-webhook", () => {
     );
   });
 
-  it("returns 400 when the URL is not a valid URL", async () => {
+  it("returns 400 naming the url field when the URL is not a valid URL", async () => {
     const res = await request(app)
       .post("/api/config/test-webhook")
       .send({ url: "not-a-url" });
 
     expect(res.status).toBe(400);
     expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/url/i);
+    expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 naming the secret field (not 'invalid URL') when secret is not a string", async () => {
+    // Copilot review on PR #19 round 3: with `secret` in the schema, a
+    // bad secret used to be reported as "invalid URL".
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: 42 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/secret/i);
+    expect(res.body.error).not.toMatch(/url/i);
     expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
   });
 

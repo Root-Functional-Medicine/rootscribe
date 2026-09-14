@@ -425,6 +425,26 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
   });
 
+  it("editing or generating the secret discards a prior Test Connection result", async () => {
+    const user = userEvent.setup();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "https://hook.example",
+    );
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await screen.findByText(/connection success/i);
+    await user.type(screen.getByLabelText(/signing secret/i), "s");
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await screen.findByText(/connection success/i);
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("Test Connection omits the secret when the field is blank", async () => {
     const user = userEvent.setup();
     routeWebhookFetch(stub);

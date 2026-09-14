@@ -106,12 +106,12 @@ export function WebhookStep({
             spellCheck={false}
             placeholder="optional — leave blank to send unsigned"
             value={secret}
-            onChange={(e) => setSecret(e.target.value)}
+            onChange={(e) => { setSecret(e.target.value); setTestResult(null); }}
           />
           <button
             type="button"
             className="btn-primary px-6 py-3 whitespace-nowrap"
-            onClick={() => setSecret(generateWebhookSecret())}
+            onClick={() => { setSecret(generateWebhookSecret()); setTestResult(null); }}
           >
             Generate
           </button>

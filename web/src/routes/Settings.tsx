@@ -298,6 +298,8 @@ export function Settings(): JSX.Element {
                   setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
+                  // A prior Test result described a different secret.
+                  setTestResult(null);
                 }}
               />
               <button
@@ -308,6 +310,7 @@ export function Settings(): JSX.Element {
                   setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
+                  setTestResult(null);
                 }}
               >
                 Generate
@@ -321,6 +324,7 @@ export function Settings(): JSX.Element {
                     setClearSecret(true);
                     setDirty(true);
                     setSaveError(null);
+                    setTestResult(null);
                   }}
                 >
                   Clear

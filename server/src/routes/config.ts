@@ -126,7 +126,10 @@ const TestWebhookSchema = z.object({
 configRouter.post("/test-webhook", async (req, res) => {
   const parsed = TestWebhookSchema.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ ok: false, error: "invalid URL" });
+    // Name the field that failed — with `secret` in the schema, a blanket
+    // "invalid URL" would mislead a caller whose URL was fine.
+    const field = parsed.error.issues[0]?.path.join(".") || "body";
+    res.status(400).json({ ok: false, error: `invalid ${field}` });
     return;
   }
   const result = await testWebhook(parsed.data.url, parsed.data.secret);

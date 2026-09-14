@@ -541,6 +541,27 @@ describe("fireWebhookForRecording — signing + instance headers", () => {
     expect(loadConfig().instanceId).toBe(first["x-rootscribe-instance"]);
   });
 
+  it("a hand-edited non-string secret in settings.json does not throw — delivery goes out unsigned", async () => {
+    // Copilot review on PR #19 round 3: loadConfig() trusts the file's
+    // shape, so `"secret": 12345` would reach createHmac(), throw, and make
+    // fireRaw retry the same broken delivery forever. A non-string is
+    // treated as "no secret" rather than taking down every webhook.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret: 12345 as unknown as string },
+      recordingsDir,
+      instanceId: "inst-badsecret",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ok = await fireWebhookForRecording("audio_ready", makeRow());
+    expect(ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-badsecret");
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+  });
+
   it("re-signs every retry attempt so a delivery after backoff still verifies", async () => {
     updateConfig({
       webhook: { url: "https://hook.example/ingest", enabled: true, secret },
