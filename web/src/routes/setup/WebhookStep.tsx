@@ -22,14 +22,16 @@ export function WebhookStep({
   // Next and Test Connection both keep it when this field is blank, so the
   // copy has to say so rather than promise "unsigned".
   const secretConfigured = Boolean(cfg.data?.config.webhook?.secretConfigured);
-  // Hydrate the URL from a stored webhook once, so revisiting this step
-  // offers "Next" (keep) instead of "Skip" (which sends webhook=null and
-  // would delete the stored URL + secret). Never clobber a value the user
-  // has already typed.
+  // Mirror the stored webhook URL into the draft while the user has not
+  // typed: a stored URL hydrates the field so revisiting offers "Next"
+  // (keep) instead of "Skip" (which sends webhook=null and would delete the
+  // stored URL + secret); and a fresh load that reports NO webhook clears a
+  // stale cached value so Next cannot post it back and resurrect a webhook
+  // the server just removed. Never clobber a value the user has typed.
   const urlTouched = useRef(false);
   useEffect(() => {
-    const stored = cfg.data?.config.webhook?.url;
-    if (stored && !urlTouched.current) setUrl(stored);
+    if (!cfg.data || urlTouched.current) return;
+    setUrl(cfg.data.config.webhook?.url ?? "");
   }, [cfg.data]);
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;

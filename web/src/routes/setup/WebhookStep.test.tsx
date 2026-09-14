@@ -463,6 +463,28 @@ describe("WebhookStep — signing secret + instance id", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: /^skip$/i })).toBeDisabled());
   });
 
+  it("clears a hydrated URL when an untouched refetch reports the webhook was removed (no resurrection on Next)", async () => {
+    // Copilot review on PR #19 round 10 (suppressed finding): the hydration
+    // effect only wrote state for a truthy stored URL, so a cached URL
+    // followed by a refetch returning webhook=null left the stale URL in
+    // the input; Next would then post it back and resurrect a cleared
+    // webhook.
+    const qc = createTestQueryClient();
+    qc.setQueryData(["config"], {
+      config: appConfigFactory
+        .authenticated()
+        .withWebhook({ url: "https://stale.example/ingest", enabled: true })
+        .build(),
+    });
+    routeWebhookFetch(stub, { config: appConfigFactory.authenticated().build() }); // fresh: webhook null
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("");
+    });
+    expect(screen.getByRole("button", { name: /^skip$/i })).toBeInTheDocument();
+  });
+
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();
