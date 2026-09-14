@@ -17,7 +17,7 @@ const configMock = vi.hoisted(() => ({
 vi.mock("../../src/config.js", () => configMock);
 
 const { mediaRouter } = await import("../../src/routes/media.js");
-const { makeTestApp } = await import("../helpers/test-server.js");
+const { startTestServer } = await import("../helpers/test-server.js");
 
 // Shared filesystem fixture — a recordings dir with a couple of files
 // plus an "outside" sibling the traversal tests try to escape to.
@@ -58,9 +58,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-function mountApp(): ReturnType<typeof makeTestApp> {
-  return makeTestApp((a) => a.use("/media", mediaRouter));
-}
+// The route reads loadConfig() per request, so one server serves every
+// case — configAt() swaps the mock between requests.
+const app = startTestServer((a) => a.use("/media", mediaRouter));
 
 function configAt(dir: string | null): void {
   configMock.loadConfig.mockReturnValue({
@@ -79,26 +79,26 @@ function configAt(dir: string | null): void {
 describe("GET /media/* — config gate", () => {
   it("returns 503 when recordingsDir is null (setup not complete)", async () => {
     configAt(null);
-    const res = await request(mountApp()).get("/media/anything.ogg");
+    const res = await request(app).get("/media/anything.ogg");
     expect(res.status).toBe(503);
     expect(res.text).toContain("not configured");
   });
 
   it("returns 404 when the path component is empty (trailing slash only)", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/");
+    const res = await request(app).get("/media/");
     expect(res.status).toBe(404);
   });
 
   it("returns 404 for a non-existent file inside a valid recordings dir", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc/nope.ogg");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc/nope.ogg");
     expect(res.status).toBe(404);
   });
 
   it("returns 404 for a directory path (not a regular file)", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc");
     expect(res.status).toBe(404);
   });
 });
@@ -106,13 +106,13 @@ describe("GET /media/* — config gate", () => {
 describe("GET /media/* — path-traversal defense", () => {
   it("rejects ../ traversal attempts (decoded)", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/..%2Foutside%2Fsecret.txt");
+    const res = await request(app).get("/media/..%2Foutside%2Fsecret.txt");
     expect(res.status).toBe(404);
   });
 
   it("rejects null-byte smuggling", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc%2Faudio.ogg%00.txt");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc%2Faudio.ogg%00.txt");
     expect(res.status).toBe(404);
   });
 
@@ -126,7 +126,7 @@ describe("GET /media/* — path-traversal defense", () => {
     } catch {
       return;
     }
-    return request(mountApp())
+    return request(app)
       .get("/media/escape-link")
       .then((res) => {
         expect(res.status).toBe(404);
@@ -137,7 +137,7 @@ describe("GET /media/* — path-traversal defense", () => {
 describe("GET /media/* — content serving", () => {
   it("serves audio.ogg with Content-Type: audio/ogg and Accept-Ranges: bytes", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .buffer(true);
 
@@ -149,21 +149,21 @@ describe("GET /media/* — content serving", () => {
 
   it("maps .json to application/json", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc/transcript.json");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc/transcript.json");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("application/json");
   });
 
   it("maps .md to text/markdown with charset=utf-8", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc/summary.md");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc/summary.md");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("text/markdown; charset=utf-8");
   });
 
   it("falls back to application/octet-stream for unknown extensions", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp()).get("/media/2026-04-18_meeting__abc/notes.unknown");
+    const res = await request(app).get("/media/2026-04-18_meeting__abc/notes.unknown");
     expect(res.status).toBe(200);
     expect(res.headers["content-type"]).toBe("application/octet-stream");
   });
@@ -172,7 +172,7 @@ describe("GET /media/* — content serving", () => {
 describe("GET /media/* — HTTP Range support", () => {
   it("returns 206 with a valid byte range and correct Content-Range header", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .set("Range", "bytes=0-499")
       .buffer(true);
@@ -185,7 +185,7 @@ describe("GET /media/* — HTTP Range support", () => {
 
   it("defaults end to size-1 when the range is open-ended (bytes=N-)", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .set("Range", "bytes=99000-")
       .buffer(true);
@@ -198,7 +198,7 @@ describe("GET /media/* — HTTP Range support", () => {
 
   it("returns 416 Range Not Satisfiable when start >= file size", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .set("Range", `bytes=${audioBytes.byteLength + 1}-`);
 
@@ -208,7 +208,7 @@ describe("GET /media/* — HTTP Range support", () => {
 
   it("returns 416 when start > end (inverted range)", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .set("Range", "bytes=500-100");
 
@@ -217,7 +217,7 @@ describe("GET /media/* — HTTP Range support", () => {
 
   it("ignores a non-bytes range prefix and serves the full file", async () => {
     configAt(recordingsDir);
-    const res = await request(mountApp())
+    const res = await request(app)
       .get("/media/2026-04-18_meeting__abc/audio.ogg")
       .set("Range", "pages=1-10")
       .buffer(true);
