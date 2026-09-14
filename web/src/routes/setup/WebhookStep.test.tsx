@@ -667,6 +667,32 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(screen.getByRole("button", { name: /test connection/i })).toBeDisabled();
   });
 
+  it("keeps Test Connection disabled when the config query failed (stored secret / instance id unknown)", async () => {
+    // Copilot review on PR #19 round 17 (suppressed finding): on error the
+    // query is settled, so the pending/fetching gate alone re-enabled Test
+    // against an unknown stored state.
+    const user = userEvent.setup();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute("placeholder", expect.stringMatching(/keep/i)),
+    );
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+    expect(screen.getByRole("button", { name: /test connection/i })).toBeDisabled();
+  });
+
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {
     const user = userEvent.setup();
     const onNext = vi.fn();

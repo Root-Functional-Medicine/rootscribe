@@ -196,6 +196,16 @@ describe("POST /api/config (validation)", () => {
     }
   });
 
+  it("returns webhook=null when the stored webhook object has a non-string url (never a malformed shape)", async () => {
+    // Copilot review on PR #19 round 17 (suppressed finding): `{ url: 123 }`
+    // from a hand-edited file reached the UI, whose hydration then called
+    // url.trim() and threw instead of letting the user repair the config.
+    updateConfig({ webhook: { url: 123, enabled: true } as unknown as AppConfig["webhook"] });
+    const get = await request(app).get("/api/config");
+    expect(get.status).toBe(200);
+    expect(get.body.config.webhook).toBeNull();
+  });
+
   it("reports secretConfigured=false for a hand-edited non-string secret (matches the unsigned delivery path)", async () => {
     // Copilot review on PR #19 round 5: the delivery path sends unsigned for
     // a non-string secret, so Settings must not claim one is configured.

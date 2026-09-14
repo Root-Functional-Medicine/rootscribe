@@ -32,12 +32,19 @@ function redactForClient(cfg: AppConfig): AppConfig {
   // Same rule as the delivery path's usableSecret(): only a non-empty STRING
   // signs, so only that counts as "configured" — a hand-edited non-string
   // must not make Settings claim verification is active.
-  const webhook = isPlainObject(cfg.webhook)
-    ? (({ secret: storedSecret, ...rest }) => ({
-        ...rest,
-        secretConfigured: typeof storedSecret === "string" && storedSecret.length > 0,
-      }))(cfg.webhook as AppConfig["webhook"] & object)
-    : null;
+  // Beyond "is an object", the URL must be a string: a hand-edited
+  // `{ url: 123 }` would otherwise reach the UI, whose hydration calls
+  // url.trim() and throws before the user can repair the config. Anything
+  // short of a valid shape is reported as null so Settings/wizard render a
+  // clean, saveable state.
+  const webhook =
+    isPlainObject(cfg.webhook) && typeof cfg.webhook["url"] === "string"
+      ? (({ secret: storedSecret, url, enabled }) => ({
+          url,
+          enabled: Boolean(enabled),
+          secretConfigured: typeof storedSecret === "string" && storedSecret.length > 0,
+        }))(cfg.webhook as AppConfig["webhook"] & object)
+      : null;
   return { ...cfg, token: cfg.token ? "***REDACTED***" : null, webhook };
 }
 

@@ -231,10 +231,11 @@ export function WebhookStep({
         <button
           className="btn-primary px-6 py-3"
           onClick={() => void test()}
-          // Gated on the config query like Next/Skip: a blank draft secret is
-          // sent as "use the stored one", so the stored state must be known
-          // before a test can be signed.
-          disabled={testing || saving || cfg.isPending || cfg.isFetching}
+          // Requires a successfully loaded, refetch-free config: a blank draft
+          // secret is sent as "use the stored one" and the instance header
+          // comes from stored state, so a test only means something when
+          // that state is known (pending, refetching AND error all disable).
+          disabled={testing || saving || !cfg.isSuccess || cfg.isFetching}
         >
           {testing ? "Testing…" : "Test Connection"}
         </button>
