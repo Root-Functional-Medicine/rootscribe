@@ -34,7 +34,11 @@ export function WebhookStep({
     setTesting(true);
     setTestResult(null);
     try {
-      const r = await api.testWebhook(trimmed);
+      // Sign the test with the draft secret so the receiver verifies the
+      // value the user is about to save; blank = let the server use whatever
+      // is stored (nothing, on a fresh install).
+      const trimmedSecret = secret.trim();
+      const r = await api.testWebhook(trimmed, trimmedSecret || undefined);
       setTestResult(r);
     } catch (err) {
       setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
@@ -114,7 +118,8 @@ export function WebhookStep({
         </div>
         <p className="text-[11px] text-on-surface-variant leading-relaxed">
           Deliveries are signed with HMAC-SHA256 (<span className="font-mono">x-rootscribe-signature</span>)
-          when a secret is set. Paste the same value into your receiver.
+          when a secret is set. Paste the same value into your receiver — it is not shown again
+          after this step. Test Connection uses the value in this field.
         </p>
 
         <div className="bg-surface-container-highest/30 p-4 rounded-lg space-y-1">

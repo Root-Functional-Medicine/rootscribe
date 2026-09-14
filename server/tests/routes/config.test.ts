@@ -133,7 +133,7 @@ describe("POST /api/config (validation)", () => {
     );
   });
 
-  it("accepts a webhook object with url + enabled + secret", async () => {
+  it("accepts a webhook object with url + enabled + secret and persists the secret", async () => {
     const res = await request(app)
       .post("/api/config")
       .send({
@@ -148,8 +148,84 @@ describe("POST /api/config (validation)", () => {
     expect(res.body.config.webhook).toMatchObject({
       url: "https://hook.example.com/in",
       enabled: true,
-      secret: "s3cret",
     });
+    expect(loadConfig().webhook?.secret).toBe("s3cret");
+  });
+
+  // Copilot review on PR #19: /api/config has no auth and Docker binds
+  // 0.0.0.0, so the signing key must never ride in a response — a LAN
+  // client could otherwise forge HMAC-valid deliveries. Only a boolean
+  // "is one configured" is exposed, mirroring the token redaction.
+  it("never returns webhook.secret on POST or GET — only secretConfigured", async () => {
+    const post = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "s3cret" } });
+    expect(post.body.config.webhook).not.toHaveProperty("secret");
+    expect(post.body.config.webhook.secretConfigured).toBe(true);
+
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+    expect(get.body.config.webhook.secretConfigured).toBe(true);
+    expect(JSON.stringify(get.body)).not.toContain("s3cret");
+  });
+
+  it("reports secretConfigured=false when a webhook has no secret", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "" } });
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook.secretConfigured).toBe(false);
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+  });
+
+  it("keeps the stored secret when a POST omits webhook.secret (unrelated edits must not wipe it)", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "keep-me" } });
+
+    const res = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/changed" } });
+
+    expect(res.status).toBe(200);
+    expect(loadConfig().webhook).toMatchObject({
+      url: "https://hook.example.com/changed",
+      enabled: true,
+      secret: "keep-me",
+    });
+    expect(res.body.config.webhook.secretConfigured).toBe(true);
+  });
+
+  it("clears the stored secret when a POST sends webhook.secret as an empty string", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+
+    const res = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "" } });
+
+    expect(res.status).toBe(200);
+    expect(loadConfig().webhook?.secret).toBeUndefined();
+    expect(res.body.config.webhook.secretConfigured).toBe(false);
+  });
+
+  it("replaces the stored secret when a POST sends a new non-empty webhook.secret", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "new" } });
+    expect(loadConfig().webhook?.secret).toBe("new");
+  });
+
+  it("drops the secret entirely when the webhook is cleared to null", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+    await request(app).post("/api/config").send({ webhook: null });
+    expect(loadConfig().webhook).toBeNull();
   });
 
   it("defaults webhook.enabled=true when url is non-empty and enabled is omitted", async () => {
@@ -242,8 +318,38 @@ describe("POST /api/config/test-webhook", () => {
       bodySnippet: "pong",
       durationMs: 42,
     });
+    // No draft secret in the body → undefined, so testWebhook falls back to
+    // the persisted secret.
     expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
       "https://hook.example/v1/ingest",
+      undefined,
+    );
+  });
+
+  it("forwards a draft secret from the body so the UI can test an unsaved value", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "draft-secret" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "draft-secret",
+    );
+  });
+
+  it("forwards an explicitly empty secret (test unsigned) distinct from an omitted one", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "" });
+
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "",
     );
   });
 

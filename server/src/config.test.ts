@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -100,6 +100,31 @@ describe("ensureInstanceId — first-run UUID generation", () => {
     resetConfigCache();
 
     expect(ensureInstanceId()).toBe("allen-macbook");
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — malformed settings.json is never overwritten", () => {
+  it("returns a process-stable id but leaves the unparseable file untouched (no data loss on repair)", async () => {
+    // Copilot review on PR #19: loadConfig()'s catch branch returns
+    // DEFAULT_CONFIG, so an unconditional persist at startup would clobber a
+    // corrupt-but-recoverable settings.json (token, webhook, ...) with
+    // defaults + a UUID. The id must still be minted (the header is
+    // mandatory) but only in memory.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    const malformed = '{"token": "recoverable-by-hand", "webhook": {';
+    writeFileSync(settingsFile, malformed);
+
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const first = ensureInstanceId();
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    // Stable for the lifetime of the process (deliveries keep one id)...
+    expect(ensureInstanceId()).toBe(first);
+    expect(loadConfig().instanceId).toBe(first);
+    // ...but the corrupt file was NOT rewritten.
+    expect(readFileSync(settingsFile, "utf8")).toBe(malformed);
     resetConfigCache();
   });
 });

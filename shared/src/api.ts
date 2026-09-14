@@ -145,6 +145,9 @@ export interface ConfigResponse {
 
 export interface WebhookTestRequest {
   url: string;
+  // Draft signing secret from the form. Omitted = use the stored secret,
+  // "" = send unsigned, non-empty = sign with this value.
+  secret?: string;
 }
 
 export interface WebhookTestResponse {

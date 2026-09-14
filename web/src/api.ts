@@ -118,10 +118,12 @@ export const api = {
       method: "POST",
       body: JSON.stringify(patch),
     }),
-  testWebhook: (url: string) =>
+  // `secret` is the form's DRAFT signing secret: undefined = let the server
+  // sign with the stored one, "" = test unsigned, non-empty = sign with it.
+  testWebhook: (url: string, secret?: string) =>
     jsonFetch<WebhookTestResponse>("/api/config/test-webhook", {
       method: "POST",
-      body: JSON.stringify({ url }),
+      body: JSON.stringify({ url, ...(secret !== undefined ? { secret } : {}) }),
     }),
   validateRecordingsDir: (pathStr: string) =>
     jsonFetch<RecordingsDirValidateResponse>("/api/config/validate-recordings-dir", {

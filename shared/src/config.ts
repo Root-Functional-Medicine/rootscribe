@@ -8,8 +8,15 @@ export interface WebhookConfig {
   enabled: boolean;
   // Shared secret used to HMAC-SHA256 sign outbound deliveries. When set,
   // every webhook carries `x-rootscribe-signature` + `x-rootscribe-timestamp`
-  // so receivers can verify origin. Never sent as a header itself.
+  // so receivers can verify origin. Never sent as a header itself, and never
+  // returned by GET/POST /api/config (the API has no auth and may be bound
+  // to 0.0.0.0) — clients see `secretConfigured` instead. On POST the field
+  // is tri-state: omitted = keep the stored secret, "" = clear it, non-empty
+  // = replace it.
   secret?: string;
+  // Response-only: whether a secret is stored. The server strips it from
+  // incoming patches (Zod drops unknown keys) and never persists it.
+  secretConfigured?: boolean;
 }
 
 export interface AppConfig {

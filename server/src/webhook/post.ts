@@ -32,15 +32,22 @@ let warnedUnsigned = false;
  *   receiver's tolerance window.
  * - Without a secret, the first delivery logs a one-time warning so the
  *   operator knows receivers cannot verify origin.
+ *
+ * `secret` is the key to sign with — the persisted one for real deliveries,
+ * or a caller-supplied draft for test sends (so Settings can verify a value
+ * the user has typed but not yet saved). Empty/undefined means unsigned.
  */
-function deliveryHeaders(event: WebhookEvent, body: string): Record<string, string> {
+function deliveryHeaders(
+  event: WebhookEvent,
+  body: string,
+  secret: string | undefined,
+): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "user-agent": USER_AGENT,
     "x-rootscribe-event": event,
     "x-rootscribe-instance": ensureInstanceId(),
   };
-  const secret = loadConfig().webhook?.secret;
   if (secret) {
     const timestampSec = Math.floor(Date.now() / 1000);
     headers["x-rootscribe-timestamp"] = String(timestampSec);
@@ -142,7 +149,7 @@ async function fireRaw(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: deliveryHeaders(event, body),
+        headers: deliveryHeaders(event, body, loadConfig().webhook?.secret),
         body,
       });
       const text = (await res.text().catch(() => "")).slice(0, 500);
@@ -211,17 +218,25 @@ function buildTestPayload(): WebhookPayload & { test: true } {
   };
 }
 
-/** Test a webhook URL without retries, for UI validation. */
+/**
+ * Test a webhook URL without retries, for UI validation.
+ *
+ * `secret` overrides the persisted signing secret so the UI can exercise a
+ * draft value before it is saved: undefined = sign with whatever is stored,
+ * "" = send unsigned, non-empty = sign with that value.
+ */
 export async function testWebhook(
   url: string,
+  secret?: string,
 ): Promise<{ ok: boolean; statusCode?: number; bodySnippet?: string; error?: string; durationMs: number }> {
   const started = Date.now();
   const body = JSON.stringify(buildTestPayload());
+  const signingSecret = secret ?? loadConfig().webhook?.secret;
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        ...deliveryHeaders("transcript_ready", body),
+        ...deliveryHeaders("transcript_ready", body, signingSecret),
         "x-rootscribe-test": "1",
       },
       body,

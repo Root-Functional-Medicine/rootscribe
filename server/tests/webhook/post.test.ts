@@ -614,4 +614,42 @@ describe("testWebhook — signing + instance headers", () => {
     expect(headers).not.toHaveProperty("x-rootscribe-signature");
     expect(headers).not.toHaveProperty("x-rootscribe-timestamp");
   });
+
+  // Copilot review on PR #19: the Settings/wizard secret lives in form state
+  // until Save, so a Test click must be able to sign with the DRAFT value —
+  // otherwise it silently uses the old (or no) secret and "succeeds" against
+  // a receiver that could never verify the value the user is about to save.
+  it("signs with an explicitly supplied draft secret instead of the persisted one", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret: "persisted-secret" },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-draft",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", "draft-secret");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+    expect(v1).toBe(expectedSignature("draft-secret", t, String(init.body)));
+    expect(v1).not.toBe(expectedSignature("persisted-secret", t, String(init.body)));
+  });
+
+  it("an explicitly empty draft secret sends an unsigned test even when one is persisted", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret: "persisted-secret" },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-cleared",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", "");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+    expect(headers["x-rootscribe-instance"]).toBe("inst-cleared");
+  });
 });

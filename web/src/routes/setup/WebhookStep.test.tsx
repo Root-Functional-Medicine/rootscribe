@@ -397,4 +397,53 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
     await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
+
+  // Copilot review on PR #19: Test Connection must sign with the DRAFT
+  // secret, or a newly generated value "succeeds" against a receiver that
+  // could never verify it.
+  it("Test Connection sends the draft secret alongside the URL", async () => {
+    const user = userEvent.setup();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "https://hook.example",
+    );
+    await user.type(screen.getByLabelText(/signing secret/i), "  draft-secret  ");
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    await waitFor(() => {
+      const post = stub.fetch.mock.calls.find(([i]) =>
+        String(i).includes("/api/config/test-webhook"),
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String((post?.[1] as RequestInit).body))).toEqual({
+        url: "https://hook.example",
+        secret: "draft-secret",
+      });
+    });
+  });
+
+  it("Test Connection omits the secret when the field is blank", async () => {
+    const user = userEvent.setup();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "https://hook.example",
+    );
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+
+    await waitFor(() => {
+      const post = stub.fetch.mock.calls.find(([i]) =>
+        String(i).includes("/api/config/test-webhook"),
+      );
+      expect(post).toBeDefined();
+      expect(JSON.parse(String((post?.[1] as RequestInit).body))).toEqual({
+        url: "https://hook.example",
+      });
+    });
+  });
 });

@@ -27,7 +27,12 @@ export function Settings(): JSX.Element {
   });
 
   const [webhookUrl, setWebhookUrl] = useState("");
+  // The server never returns the signing secret (GET /api/config redacts it
+  // and reports `secretConfigured`), so this is a write-only DRAFT: "" with
+  // clearSecret=false means "untouched — keep whatever is stored", a
+  // non-empty value replaces it, and clearSecret=true sends "" to drop it.
   const [webhookSecret, setWebhookSecret] = useState("");
+  const [clearSecret, setClearSecret] = useState(false);
   const [instanceId, setInstanceId] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
@@ -40,10 +45,10 @@ export function Settings(): JSX.Element {
     if (!cfg.data) return;
     const c = cfg.data.config;
     setWebhookUrl(c.webhook?.url ?? "");
-    // The secret is populated from config so a save that touches an
-    // unrelated field re-sends it: the server replaces the whole `webhook`
-    // object on every POST, so omitting it here would silently wipe it.
-    setWebhookSecret(c.webhook?.secret ?? "");
+    // Never populated from config — the secret is redacted server-side. A
+    // fresh load resets the draft to "untouched".
+    setWebhookSecret("");
+    setClearSecret(false);
     setInstanceId(c.instanceId ?? "");
     setPollMinutes(c.pollIntervalMinutes);
     setJiraBaseUrl(c.jiraBaseUrl ?? "");
@@ -63,7 +68,6 @@ export function Settings(): JSX.Element {
       // made "clear" look broken. Sending DEFAULT_CONFIG.jiraBaseUrl keeps
       // the field in a valid state while respecting the clear gesture.
       const trimmedJira = jiraBaseUrl.trim() || DEFAULT_CONFIG.jiraBaseUrl;
-      const trimmedSecret = webhookSecret.trim();
       // A blank instance id is omitted rather than sent: the server rejects
       // empty values, and "leave it alone" is the only sensible reading of a
       // cleared field for an identifier the server minted.
@@ -73,7 +77,9 @@ export function Settings(): JSX.Element {
           ? {
               url: webhookUrl.trim(),
               enabled: true,
-              ...(trimmedSecret ? { secret: trimmedSecret } : {}),
+              // Tri-state on the wire: omitted = keep stored, "" = clear,
+              // non-empty = replace.
+              ...(draftSecret() !== undefined ? { secret: draftSecret() } : {}),
             }
           : null,
         pollIntervalMinutes: pollMinutes,
@@ -92,10 +98,20 @@ export function Settings(): JSX.Element {
     }
   };
 
+  // The secret value to send for save AND test: undefined = untouched (use
+  // the stored one), "" = cleared, otherwise the trimmed draft.
+  const draftSecret = (): string | undefined => {
+    if (clearSecret) return "";
+    const trimmed = webhookSecret.trim();
+    return trimmed ? trimmed : undefined;
+  };
+
   const test = async (): Promise<void> => {
     setTestResult(null);
     try {
-      const r = await api.testWebhook(webhookUrl.trim());
+      // Pass the draft so the test delivery is signed with the value the
+      // user is about to save, not the previously stored one.
+      const r = await api.testWebhook(webhookUrl.trim(), draftSecret());
       const snippet = r.bodySnippet?.slice(0, 400).trim();
       let message: string;
       if (r.error) {
@@ -112,6 +128,12 @@ export function Settings(): JSX.Element {
 
   const s = syncStatus.data;
   const isHealthy = s && !s.authRequired && !s.lastError;
+  const secretConfigured = Boolean(c.webhook?.secretConfigured);
+  const secretPlaceholder = clearSecret
+    ? "will be cleared on save"
+    : secretConfigured
+      ? "configured — leave blank to keep, or generate a new one to rotate"
+      : "leave blank to send unsigned";
 
   return (
     <div className="max-w-[48rem] mx-auto space-y-8">
@@ -269,10 +291,11 @@ export function Settings(): JSX.Element {
                 type="text"
                 autoComplete="off"
                 spellCheck={false}
-                placeholder="leave blank to send unsigned"
+                placeholder={secretPlaceholder}
                 value={webhookSecret}
                 onChange={(e) => {
                   setWebhookSecret(e.target.value);
+                  setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
                 }}
@@ -282,18 +305,34 @@ export function Settings(): JSX.Element {
                 className="btn-primary px-6 py-3"
                 onClick={() => {
                   setWebhookSecret(generateWebhookSecret());
+                  setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
                 }}
               >
                 Generate
               </button>
+              {secretConfigured && !clearSecret && (
+                <button
+                  type="button"
+                  className="px-4 py-3 text-sm font-semibold text-on-surface-variant hover:text-error transition-colors"
+                  onClick={() => {
+                    setWebhookSecret("");
+                    setClearSecret(true);
+                    setDirty(true);
+                    setSaveError(null);
+                  }}
+                >
+                  Clear
+                </button>
+              )}
             </div>
             <p className="text-[11px] text-on-surface-variant leading-relaxed">
               When set, every delivery carries{" "}
               <span className="font-mono">x-rootscribe-signature</span> (HMAC-SHA256) and{" "}
               <span className="font-mono">x-rootscribe-timestamp</span>. Paste the same value
-              into your receiver so it can verify origin.
+              into your receiver so it can verify origin — it is not shown again after
+              saving, so copy it now. Test uses the value in this field.
             </p>
           </div>
 

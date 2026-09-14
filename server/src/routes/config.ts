@@ -8,17 +8,26 @@ import {
   statfsSync,
 } from "node:fs";
 import path from "node:path";
+import type { AppConfig } from "@rootscribe/shared";
 import { loadConfig, updateConfig } from "../config.js";
 import { testWebhook } from "../webhook/post.js";
 import { poller } from "../sync/poller.js";
 
 export const configRouter = Router();
 
+// Strip everything a browser must never see. The Plaud token is replaced by
+// a sentinel; the webhook signing secret is removed outright and reported as
+// a boolean — this API has no auth and Docker binds 0.0.0.0, so a LAN client
+// that could read the secret could forge HMAC-valid deliveries.
+function redactForClient(cfg: AppConfig): AppConfig {
+  const webhook = cfg.webhook
+    ? (({ secret, ...rest }) => ({ ...rest, secretConfigured: Boolean(secret) }))(cfg.webhook)
+    : cfg.webhook;
+  return { ...cfg, token: cfg.token ? "***REDACTED***" : null, webhook };
+}
+
 configRouter.get("/", (_req, res) => {
-  const cfg = loadConfig();
-  // Redact the token — we never send it to the browser.
-  const redacted = { ...cfg, token: cfg.token ? "***REDACTED***" : null };
-  res.json({ config: redacted });
+  res.json({ config: redactForClient(loadConfig()) });
 });
 
 const PatchSchema = z.object({
@@ -79,21 +88,34 @@ configRouter.post("/", (req, res) => {
     return;
   }
   const patch = parsed.data;
+  // Tri-state secret: omitted keeps whatever is stored (clients can't read
+  // it back, so an unrelated save must not wipe it), "" clears, non-empty
+  // replaces. Clearing the whole webhook (null) drops the secret with it.
+  const storedSecret = loadConfig().webhook?.secret;
+  const nextSecret =
+    patch.webhook?.secret === undefined ? storedSecret : patch.webhook.secret || undefined;
   const normalized = {
     ...patch,
     webhook: patch.webhook
       ? {
           url: patch.webhook.url,
           enabled: patch.webhook.enabled ?? patch.webhook.url.length > 0,
-          ...(patch.webhook.secret ? { secret: patch.webhook.secret } : {}),
+          ...(nextSecret ? { secret: nextSecret } : {}),
         }
       : patch.webhook,
   };
   const next = updateConfig(normalized);
-  res.json({ config: { ...next, token: next.token ? "***REDACTED***" : null } });
+  res.json({ config: redactForClient(next) });
 });
 
-const TestWebhookSchema = z.object({ url: z.string().url() });
+// `secret` is the UI's DRAFT signing secret (typed/generated but not yet
+// saved): omitted = sign with the stored one, "" = test unsigned, non-empty
+// = sign with it. Without this, Test would silently use the old secret and
+// report success against a receiver that can't verify the new one.
+const TestWebhookSchema = z.object({
+  url: z.string().url(),
+  secret: z.string().optional(),
+});
 
 configRouter.post("/test-webhook", async (req, res) => {
   const parsed = TestWebhookSchema.safeParse(req.body);
@@ -101,7 +123,7 @@ configRouter.post("/test-webhook", async (req, res) => {
     res.status(400).json({ ok: false, error: "invalid URL" });
     return;
   }
-  const result = await testWebhook(parsed.data.url);
+  const result = await testWebhook(parsed.data.url, parsed.data.secret);
   res.json(result);
 });
 

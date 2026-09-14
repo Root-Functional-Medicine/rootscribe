@@ -625,30 +625,45 @@ describe("Settings — webhook signing secret + instance id", () => {
   });
   afterEach(() => stub.cleanup());
 
-  function findConfigPost(): { webhook: unknown; instanceId?: unknown } {
+  function findPost(url: string): Record<string, unknown> {
     const postCall = stub.fetch.mock.calls.find(
       ([i, init]) =>
-        String(i) === "/api/config" &&
-        (init as RequestInit | undefined)?.method === "POST",
+        String(i) === url && (init as RequestInit | undefined)?.method === "POST",
     );
     expect(postCall).toBeDefined();
-    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as {
-      webhook: unknown;
-      instanceId?: unknown;
-    };
+    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as Record<string, unknown>;
   }
 
-  it("populates the signing secret and instance id from the loaded config", async () => {
+  // The server never returns the secret (GET /api/config redacts it and
+  // reports `secretConfigured`), so the field is write-only: it starts
+  // empty, tells the user whether one is stored, and an untouched field
+  // means "keep what is stored" on save.
+  it("shows the configured state without revealing the secret, and populates the instance id", async () => {
     routeSettingsFetch(stub, {
       config: makeConfig({
-        webhook: { url: "https://hook.example", enabled: true, secret: "whsec_from_disk" },
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
         instanceId: "inst-from-disk",
       }),
     });
     renderWithProviders(<Settings />);
 
-    expect(await screen.findByLabelText(/signing secret/i)).toHaveValue("whsec_from_disk");
+    const secretInput = await screen.findByLabelText(/signing secret/i);
+    expect(secretInput).toHaveValue("");
+    expect(secretInput).toHaveAttribute("placeholder", expect.stringMatching(/configured/i));
+    expect(screen.getByRole("button", { name: /^clear$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-from-disk");
+  });
+
+  it("offers no Clear button and an 'unsigned' hint when no secret is stored", async () => {
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: false },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    const secretInput = await screen.findByLabelText(/signing secret/i);
+    expect(secretInput).toHaveAttribute("placeholder", expect.stringMatching(/unsigned/i));
+    expect(screen.queryByRole("button", { name: /^clear$/i })).not.toBeInTheDocument();
   });
 
   it("Generate fills the secret with 64 hex characters and marks the form dirty", async () => {
@@ -668,7 +683,7 @@ describe("Settings — webhook signing secret + instance id", () => {
     expect(screen.getByRole("button", { name: /save settings/i })).toBeEnabled();
   });
 
-  it("save POSTs the secret inside the webhook object and the trimmed instance id", async () => {
+  it("save POSTs a typed secret inside the webhook object and the trimmed instance id", async () => {
     const user = userEvent.setup();
     routeSettingsFetch(stub, {
       config: makeConfig({
@@ -678,14 +693,14 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
     renderWithProviders(<Settings />);
 
-    await user.type(await screen.findByLabelText(/signing secret/i), "whsec_typed");
+    await user.type(await screen.findByLabelText(/signing secret/i), "  whsec_typed  ");
     const instanceInput = screen.getByLabelText(/instance id/i);
     await user.clear(instanceInput);
     await user.type(instanceInput, "  allen-macbook  ");
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
-      const body = findConfigPost();
+      const body = findPost("/api/config");
       expect(body.webhook).toEqual({
         url: "https://hook.example",
         enabled: true,
@@ -695,24 +710,95 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
   });
 
-  it("clearing the secret removes it from the webhook object; a blank instance id is omitted (keeps the stored value)", async () => {
+  it("an untouched secret field is omitted from the save so the stored secret is kept; a blank instance id is omitted too", async () => {
     const user = userEvent.setup();
     routeSettingsFetch(stub, {
       config: makeConfig({
-        webhook: { url: "https://hook.example", enabled: true, secret: "whsec_old" },
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
         instanceId: "inst-keep",
       }),
     });
     renderWithProviders(<Settings />);
 
-    await user.clear(await screen.findByLabelText(/signing secret/i));
-    await user.clear(screen.getByLabelText(/instance id/i));
+    // Edit something unrelated so Save is enabled, and blank the instance id.
+    await user.clear(await screen.findByLabelText(/instance id/i));
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
-      const body = findConfigPost();
+      const body = findPost("/api/config");
       expect(body.webhook).toEqual({ url: "https://hook.example", enabled: true });
       expect(body).not.toHaveProperty("instanceId");
+    });
+  });
+
+  it("Clear sends webhook.secret as an empty string so the server drops the stored secret", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await screen.findByLabelText(/signing secret/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/cleared/i),
+    );
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body.webhook).toEqual({ url: "https://hook.example", enabled: true, secret: "" });
+    });
+  });
+
+  // Copilot review on PR #19: Test must exercise the DRAFT secret, not the
+  // stored one, or it reports success against a receiver that can't verify
+  // the value about to be saved.
+  it("Test sends the draft secret so the receiver verifies the value about to be saved", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await user.type(await screen.findByLabelText(/signing secret/i), "draft-secret");
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config/test-webhook");
+      expect(body).toEqual({ url: "https://hook.example", secret: "draft-secret" });
+    });
+  });
+
+  it("Test omits the secret when the field is untouched (server signs with the stored one) and sends '' after Clear", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config/test-webhook")).toEqual({ url: "https://hook.example" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      const calls = stub.fetch.mock.calls.filter(
+        ([i]) => String(i) === "/api/config/test-webhook",
+      );
+      expect(calls.length).toBe(2);
+      const body = JSON.parse(String((calls[1]![1] as RequestInit).body));
+      expect(body).toEqual({ url: "https://hook.example", secret: "" });
     });
   });
 

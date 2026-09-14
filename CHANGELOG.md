@@ -26,11 +26,22 @@ Phase 3c of the Rootstock integration epic (DEVX-1001).
   `x-rootscribe-instance` on every delivery, signed or not, so one
   receiver can tell several developers' instances apart. Editable in
   Settings; `POST /api/config` validates it as a header-safe token
-  (1..128 chars of `[A-Za-z0-9._:-]`).
+  (1..128 chars of `[A-Za-z0-9._:-]`). When `settings.json` exists but
+  is unparseable the id is minted in memory only — the corrupt file is
+  never overwritten with defaults.
+- **Write-only secret — DEVX-1016.** `GET`/`POST /api/config` never
+  return `webhook.secret` (the API has no auth and Docker binds
+  `0.0.0.0`); responses carry `webhook.secretConfigured` instead. On
+  `POST`, `webhook.secret` is tri-state: omitted keeps the stored value,
+  `""` clears it, non-empty replaces it — so unrelated saves can no
+  longer wipe a stored secret.
 - **Settings + wizard UI — DEVX-1016.** Settings → Webhook Outbound gains a
-  Signing Secret input with a Generate button (32 CSPRNG bytes as hex)
-  and an editable Instance ID field. The setup wizard's webhook step gets
-  the same secret input plus a read-only instance id display.
+  Signing Secret input with Generate and Clear buttons (32 CSPRNG bytes
+  as hex) and an editable Instance ID field. The setup wizard's webhook
+  step gets the same secret input plus a read-only instance id display.
+  `POST /api/config/test-webhook` accepts the draft `secret` so the Test
+  button verifies the value about to be saved, not the previously stored
+  one.
 - **README "Webhook signing" section** with the header table and a Node
   verification recipe (timing-safe compare + replay tolerance).
 - Playwright journey covering secret + instance id persistence through

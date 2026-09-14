@@ -115,7 +115,7 @@ Each recording gets its own folder under your chosen recordings directory:
 
 ## Webhook signing
 
-Set a **Signing Secret** in Settings → Webhook Outbound (or in the setup wizard's webhook step; the **Generate** button mints a 64-hex-char value). Once set, every delivery — including test deliveries — carries:
+Set a **Signing Secret** in Settings → Webhook Outbound (or in the setup wizard's webhook step; the **Generate** button mints a 64-hex-char value). Copy it into your receiver before saving — the secret is **write-only**: `GET /api/config` never returns it (the API is unauthenticated and may be bound to `0.0.0.0` in Docker), only `webhook.secretConfigured: true|false`. Saving Settings with the secret field left blank keeps the stored value; **Clear** removes it; **Generate** rotates it. The **Test** button signs with whatever is in the field right now (blank = the stored secret), so you can verify a new value against your receiver before saving it. Once set, every delivery — including test deliveries — carries:
 
 | Header | Value |
 |---|---|
@@ -198,7 +198,7 @@ RootScribe is a foreground process. To keep it running without a terminal:
 
 Settings live in `~/.config/rootscribe/settings.json` (or `~/Library/Application Support/rootscribe/` on macOS, `%APPDATA%\rootscribe\` on Windows). Recording state is in `state.sqlite` alongside. Both are managed through the web UI — you shouldn't need to edit them by hand.
 
-The bearer token is stored as plaintext in `settings.json` (with `chmod 600`). The file lives in a user-only directory, and the token's scope is equivalent to "read this user's own Plaud data." OS keychain integration is a future enhancement. The webhook signing secret (`webhook.secret`) and the install's `instanceId` live in the same file.
+The bearer token is stored as plaintext in `settings.json` (with `chmod 600`). The file lives in a user-only directory, and the token's scope is equivalent to "read this user's own Plaud data." OS keychain integration is a future enhancement. The webhook signing secret (`webhook.secret`) and the install's `instanceId` live in the same file; neither the token nor the secret is ever returned by the API. If `settings.json` is present but unparseable, the server runs on defaults and does **not** rewrite the file (so a hand-recoverable config is preserved) — the instance id it mints in that state is in-memory only until the file is repaired.
 
 ## Development
 

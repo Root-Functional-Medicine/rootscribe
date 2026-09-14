@@ -235,3 +235,34 @@ describe("api.removeTag / removeJiraLink", () => {
     expect(url).toBe("/api/recordings/rec-1/jira-links/DEVX-1%20(sub)");
   });
 });
+
+describe("api.testWebhook", () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = vi.fn() as FetchMock;
+    vi.stubGlobal("fetch", fetchMock);
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(jsonResponse({ ok: true, statusCode: 200, durationMs: 1 })),
+    );
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("omits `secret` from the body when no draft is supplied (server signs with the stored one)", async () => {
+    await api.testWebhook("https://hook.example");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(init.body))).toEqual({ url: "https://hook.example" });
+  });
+
+  it("sends the draft `secret` when supplied, including an explicit empty string (test unsigned)", async () => {
+    await api.testWebhook("https://hook.example", "draft");
+    await api.testWebhook("https://hook.example", "");
+    const first = JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body));
+    const second = JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body));
+    expect(first).toEqual({ url: "https://hook.example", secret: "draft" });
+    expect(second).toEqual({ url: "https://hook.example", secret: "" });
+  });
+});
