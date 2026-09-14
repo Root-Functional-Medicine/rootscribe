@@ -55,6 +55,21 @@ const PatchSchema = z.object({
       }
     }, "jiraBaseUrl must use http or https")
     .optional(),
+  // Sent verbatim as the `x-rootscribe-instance` header on every outbound
+  // webhook. Restrict to a conservative header-safe token: undici's fetch
+  // throws on control characters / non-Latin-1 bytes, which would break
+  // every delivery, and spaces make the value awkward to match on the
+  // receiving side.
+  instanceId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(128)
+    .regex(
+      /^[A-Za-z0-9._:-]+$/,
+      "instanceId may only contain letters, digits, '.', '_', ':' and '-'",
+    )
+    .optional(),
 });
 
 configRouter.post("/", (req, res) => {

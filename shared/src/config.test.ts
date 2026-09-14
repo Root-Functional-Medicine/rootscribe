@@ -31,3 +31,12 @@ describe("DEFAULT_CONFIG", () => {
     );
   });
 });
+
+describe("DEFAULT_CONFIG.instanceId", () => {
+  it("is null until the server generates one on first run", () => {
+    // The server mints a UUID and persists it the first time it boots
+    // (ensureInstanceId); shared defaults must not bake in a fixed value
+    // or every install would share the same identifier.
+    expect(DEFAULT_CONFIG.instanceId).toBeNull();
+  });
+});

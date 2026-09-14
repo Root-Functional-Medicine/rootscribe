@@ -63,3 +63,43 @@ describe("loadConfig — malformed settings.json", () => {
     resetConfigCache();
   });
 });
+
+describe("ensureInstanceId — first-run UUID generation", () => {
+  it("mints a UUID, persists it to settings.json, and returns it when none is configured", async () => {
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const id = ensureInstanceId();
+
+    // RFC 4122 v4 shape — what node:crypto randomUUID() produces.
+    expect(id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    // Persisted: a fresh read of settings.json (cache dropped) sees it.
+    resetConfigCache();
+    expect(loadConfig().instanceId).toBe(id);
+    resetConfigCache();
+  });
+
+  it("is idempotent — a second call returns the same id without re-minting", async () => {
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const first = ensureInstanceId();
+    const second = ensureInstanceId();
+    expect(second).toBe(first);
+    resetConfigCache();
+  });
+
+  it("returns the operator-chosen id untouched when settings.json already has one", async () => {
+    writeFileSync(
+      path.join(tmpDir, "settings.json"),
+      JSON.stringify({ instanceId: "allen-macbook" }),
+    );
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toBe("allen-macbook");
+    resetConfigCache();
+  });
+});

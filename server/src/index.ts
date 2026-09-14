@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import openUrl from "open";
 import { logger } from "./logger.js";
-import { loadConfig } from "./config.js";
+import { ensureInstanceId, loadConfig } from "./config.js";
 import { ensureConfigDir, lockPath } from "./paths.js";
 import { authRouter } from "./routes/auth.js";
 import { configRouter } from "./routes/config.js";
@@ -86,6 +86,9 @@ async function main(): Promise<void> {
   }
 
   const cfg = loadConfig();
+  // First run mints the install's stable instance id so it is visible in
+  // Settings (and stamped on outbound webhooks) before anything fires.
+  ensureInstanceId();
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: "1mb" }));

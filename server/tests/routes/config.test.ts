@@ -177,6 +177,45 @@ describe("POST /api/config (validation)", () => {
     expect(res.status).toBe(200);
     expect(res.body.config.webhook).toBeNull();
   });
+
+  it("persists a trimmed instanceId and echoes it back (also visible on GET)", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "  allen-macbook.local  " });
+
+    expect(res.status).toBe(200);
+    expect(res.body.config.instanceId).toBe("allen-macbook.local");
+    expect(loadConfig().instanceId).toBe("allen-macbook.local");
+
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.instanceId).toBe("allen-macbook.local");
+  });
+
+  it("rejects an empty / whitespace-only instanceId", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "   " });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it("rejects an instanceId containing characters that are not safe in a header value", async () => {
+    // Spaces, CR/LF and other control characters make undici's fetch throw
+    // on the outbound request, which would silently break EVERY delivery.
+    for (const bad of ["two words", "line\nbreak", "tab\there", "émoji-🚀"]) {
+      const res = await request(app).post("/api/config").send({ instanceId: bad });
+      expect(res.status, `expected 400 for ${JSON.stringify(bad)}`).toBe(400);
+    }
+  });
+
+  it("rejects an instanceId longer than 128 characters", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "a".repeat(129) });
+
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("POST /api/config/test-webhook", () => {

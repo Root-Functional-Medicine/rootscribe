@@ -1,4 +1,5 @@
 import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG, type AppConfig } from "@rootscribe/shared";
 import { ensureConfigDir, settingsPath } from "./paths.js";
 import { logger } from "./logger.js";
@@ -41,6 +42,23 @@ export function updateConfig(patch: Partial<AppConfig>): AppConfig {
   const next = { ...loadConfig(), ...patch };
   saveConfig(next);
   return next;
+}
+
+/**
+ * Return this install's stable instance identifier, minting and persisting a
+ * UUID the first time it is needed. Called once at server startup so the id
+ * shows up in Settings immediately, and again by every outbound webhook so
+ * `x-rootscribe-instance` is present even if settings.json was hand-edited
+ * to drop the field. Idempotent: an existing (possibly operator-chosen)
+ * value is returned untouched.
+ */
+export function ensureInstanceId(): string {
+  const cfg = loadConfig();
+  if (cfg.instanceId) return cfg.instanceId;
+  const instanceId = randomUUID();
+  saveConfig({ ...cfg, instanceId });
+  logger.info({ instanceId }, "generated instance id for outbound webhooks");
+  return instanceId;
 }
 
 export function resetConfigCache(): void {

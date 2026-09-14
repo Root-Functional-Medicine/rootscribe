@@ -1,13 +1,58 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { WebhookPayload, WebhookEvent, RecordingRow } from "@rootscribe/shared";
-import { loadConfig } from "../config.js";
+import { ensureInstanceId, loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { logger } from "../logger.js";
 
 import { encodeFolderPath } from "../lib/url.js";
+import { signWebhook } from "./sign.js";
 
 const BACKOFF_MS = [5_000, 30_000, 120_000];
+
+// Advertised on every outbound delivery. Kept in lockstep with package.json
+// by the release checklist (see CHANGELOG); deriving it at build time is a
+// DEVX-314 follow-up.
+const USER_AGENT = "rootscribe/0.1.1";
+
+// Latch so the "unsigned" warning is logged once per process, not once per
+// delivery — a long-running install without a secret would otherwise spam
+// the log on every poll cycle.
+let warnedUnsigned = false;
+
+/**
+ * Headers for one outbound delivery attempt.
+ *
+ * - `x-rootscribe-instance` is always present so a shared receiver can tell
+ *   installs apart.
+ * - When a webhook secret is configured, `x-rootscribe-timestamp` and
+ *   `x-rootscribe-signature: t=<sec>,v1=<hex>` are added. The signature
+ *   covers the exact `body` string passed to fetch, and the timestamp is
+ *   computed per attempt so a retry after backoff still lands inside the
+ *   receiver's tolerance window.
+ * - Without a secret, the first delivery logs a one-time warning so the
+ *   operator knows receivers cannot verify origin.
+ */
+function deliveryHeaders(event: WebhookEvent, body: string): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "user-agent": USER_AGENT,
+    "x-rootscribe-event": event,
+    "x-rootscribe-instance": ensureInstanceId(),
+  };
+  const secret = loadConfig().webhook?.secret;
+  if (secret) {
+    const timestampSec = Math.floor(Date.now() / 1000);
+    headers["x-rootscribe-timestamp"] = String(timestampSec);
+    headers["x-rootscribe-signature"] = `t=${timestampSec},v1=${signWebhook(secret, timestampSec, body)}`;
+  } else if (!warnedUnsigned) {
+    warnedUnsigned = true;
+    logger.warn(
+      "webhook deliveries are unsigned — set a webhook secret in Settings so receivers can verify origin",
+    );
+  }
+  return headers;
+}
 
 function readIfExists(absPath: string): string | null {
   try {
@@ -97,11 +142,7 @@ async function fireRaw(
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "user-agent": "rootscribe/0.1.1",
-          "x-rootscribe-event": event,
-        },
+        headers: deliveryHeaders(event, body),
         body,
       });
       const text = (await res.text().catch(() => "")).slice(0, 500);
@@ -180,9 +221,7 @@ export async function testWebhook(
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        "user-agent": "rootscribe/0.1.1",
-        "x-rootscribe-event": "transcript_ready",
+        ...deliveryHeaders("transcript_ready", body),
         "x-rootscribe-test": "1",
       },
       body,

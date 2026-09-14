@@ -6,6 +6,9 @@ export interface BindConfig {
 export interface WebhookConfig {
   url: string;
   enabled: boolean;
+  // Shared secret used to HMAC-SHA256 sign outbound deliveries. When set,
+  // every webhook carries `x-rootscribe-signature` + `x-rootscribe-timestamp`
+  // so receivers can verify origin. Never sent as a header itself.
   secret?: string;
 }
 
@@ -26,6 +29,12 @@ export interface AppConfig {
   // buildJiraUrl(baseUrl, key) — trailing slashes on either side are
   // normalized, so users can store it with or without one.
   jiraBaseUrl: string;
+  // Stable identifier for this RootScribe install, sent as
+  // `x-rootscribe-instance` on every outbound webhook so one receiver can tell
+  // several developers' instances apart. Generated once (UUID) on first run
+  // by the server; editable in Settings. Null only until the server has
+  // booted for the first time.
+  instanceId: string | null;
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -41,4 +50,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   bind: { host: "127.0.0.1", port: 44471 },
   lanToken: null,
   jiraBaseUrl: "https://rootfunctionalmedicine.atlassian.net/browse/",
+  instanceId: null,
 };
