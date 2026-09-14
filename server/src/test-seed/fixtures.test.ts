@@ -66,6 +66,10 @@ describe("SEED fixture data", () => {
     expect(SEED_CONFIG_BASE.token).toMatch(/e2e/);
   });
 
+  it("pins a deterministic instanceId so e2e journeys can assert on the Settings display", () => {
+    expect(SEED_CONFIG_BASE.instanceId).toBe("e2e-seed-instance");
+  });
+
   it("seedConfig() defaults bind.port to DEFAULT_BIND_PORT but honors an override", () => {
     expect(seedConfig().bind.port).toBe(DEFAULT_BIND_PORT);
     expect(seedConfig(9999).bind.port).toBe(9999);
@@ -271,7 +275,8 @@ describe("resetMutableState", () => {
       token: "leaked-token",
       pollIntervalMinutes: 5,
       jiraBaseUrl: "https://evil.example.com/browse/",
-      webhook: { url: "https://leak.example.com", enabled: true },
+      webhook: { url: "https://leak.example.com", enabled: true, secret: "leaked" },
+      instanceId: "journey-edited-id",
       bind: { host: "127.0.0.1", port: 54321 },
       recordingsDir: path.join(configDir, "recordings"),
     };
@@ -284,6 +289,7 @@ describe("resetMutableState", () => {
     expect(restored.pollIntervalMinutes).toBe(SEED_CONFIG_BASE.pollIntervalMinutes);
     expect(restored.jiraBaseUrl).toBe(SEED_CONFIG_BASE.jiraBaseUrl);
     expect(restored.webhook).toBeNull();
+    expect(restored.instanceId).toBe(SEED_CONFIG_BASE.instanceId);
     expect(restored.token).toBe(SEED_CONFIG_BASE.token);
     // ...but bind.port was preserved (so the running server isn't out of sync
     // with its own settings file).
