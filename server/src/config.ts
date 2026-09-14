@@ -81,8 +81,15 @@ export function ensureInstanceId(): string {
   const cfg = loadConfig();
   if (isValidInstanceId(cfg.instanceId)) return cfg.instanceId;
   if (cfg.instanceId != null) {
+    // Log only sanitized metadata: the value is untrusted file content and
+    // a hand-edited object/array would otherwise be serialized (nested
+    // contents included) into rootscribe.log.
+    const rejected: unknown = cfg.instanceId;
     logger.warn(
-      { instanceId: cfg.instanceId },
+      {
+        type: Array.isArray(rejected) ? "array" : typeof rejected,
+        ...(typeof rejected === "string" ? { length: rejected.length } : {}),
+      },
       "persisted instanceId is not a header-safe token — replacing it with a generated id",
     );
   }

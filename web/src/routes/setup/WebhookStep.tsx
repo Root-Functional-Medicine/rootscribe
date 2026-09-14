@@ -139,9 +139,11 @@ export function WebhookStep({
             autoComplete="off"
             spellCheck={false}
             placeholder={
-              secretConfigured
-                ? "a secret is already stored — leave blank to keep it, or generate a new one"
-                : "optional — leave blank to send unsigned"
+              cfg.isError
+                ? "could not load current settings — leave blank to keep any stored secret"
+                : secretConfigured
+                  ? "a secret is already stored — leave blank to keep it, or generate a new one"
+                  : "optional — leave blank to send unsigned"
             }
             value={secret}
             onChange={(e) => { setSecret(e.target.value); invalidateTest(); }}

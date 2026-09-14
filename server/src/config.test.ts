@@ -215,3 +215,27 @@ describe("ensureInstanceId — settings.json that parses but is not a plain obje
     resetConfigCache();
   });
 });
+
+describe("ensureInstanceId — rejected persisted values are never logged verbatim", () => {
+  it("logs only the value's type when replacing a hand-edited object instanceId (no nested contents in the log)", async () => {
+    // Copilot review on PR #19 round 8: passing the raw value to Pino would
+    // serialize an object/array — and anything nested in it — into
+    // rootscribe.log while rejecting it.
+    writeFileSync(
+      path.join(tmpDir, "settings.json"),
+      JSON.stringify({ instanceId: { nested: "do-not-log-me", token: "cred-xyz" } }),
+    );
+    const { logger } = await import("./logger.js");
+    vi.mocked(logger.warn).mockClear();
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toMatch(/^[0-9a-f-]{36}$/);
+
+    const logged = JSON.stringify(vi.mocked(logger.warn).mock.calls);
+    expect(logged).not.toContain("do-not-log-me");
+    expect(logged).not.toContain("cred-xyz");
+    expect(logged).toMatch(/object/);
+    resetConfigCache();
+  });
+});

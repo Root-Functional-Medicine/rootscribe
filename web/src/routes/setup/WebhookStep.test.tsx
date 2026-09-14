@@ -532,6 +532,36 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
   });
 
+  it("when the config query failed, says a blank field keeps any stored secret rather than promising unsigned", async () => {
+    // Copilot review on PR #19 round 8: with the stored state unknown, a
+    // blank draft is sent as undefined (server uses whatever is stored), so
+    // "leave blank to send unsigned" could be false.
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await waitFor(() => {
+      expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+        "placeholder",
+        expect.stringMatching(/keep/i),
+      );
+    });
+    expect(screen.getByLabelText(/signing secret/i)).not.toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/unsigned/i),
+    );
+  });
+
   it("tells a fresh wizard that a blank field sends unsigned", async () => {
     routeWebhookFetch(stub);
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
