@@ -2,6 +2,7 @@ import { useState, useEffect, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { api } from "../api.js";
+import { generateWebhookSecret } from "../lib/webhookSecret.js";
 
 function formatRelative(ts: number | null): string {
   if (!ts) return "never";
@@ -26,6 +27,8 @@ export function Settings(): JSX.Element {
   });
 
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [instanceId, setInstanceId] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -37,6 +40,11 @@ export function Settings(): JSX.Element {
     if (!cfg.data) return;
     const c = cfg.data.config;
     setWebhookUrl(c.webhook?.url ?? "");
+    // The secret is populated from config so a save that touches an
+    // unrelated field re-sends it: the server replaces the whole `webhook`
+    // object on every POST, so omitting it here would silently wipe it.
+    setWebhookSecret(c.webhook?.secret ?? "");
+    setInstanceId(c.instanceId ?? "");
     setPollMinutes(c.pollIntervalMinutes);
     setJiraBaseUrl(c.jiraBaseUrl ?? "");
     setDirty(false);
@@ -55,12 +63,22 @@ export function Settings(): JSX.Element {
       // made "clear" look broken. Sending DEFAULT_CONFIG.jiraBaseUrl keeps
       // the field in a valid state while respecting the clear gesture.
       const trimmedJira = jiraBaseUrl.trim() || DEFAULT_CONFIG.jiraBaseUrl;
+      const trimmedSecret = webhookSecret.trim();
+      // A blank instance id is omitted rather than sent: the server rejects
+      // empty values, and "leave it alone" is the only sensible reading of a
+      // cleared field for an identifier the server minted.
+      const trimmedInstanceId = instanceId.trim();
       await api.updateConfig({
         webhook: webhookUrl.trim()
-          ? { url: webhookUrl.trim(), enabled: true }
+          ? {
+              url: webhookUrl.trim(),
+              enabled: true,
+              ...(trimmedSecret ? { secret: trimmedSecret } : {}),
+            }
           : null,
         pollIntervalMinutes: pollMinutes,
         jiraBaseUrl: trimmedJira,
+        ...(trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
       });
       await qc.invalidateQueries({ queryKey: ["config"] });
       setDirty(false);
@@ -236,6 +254,76 @@ export function Settings(): JSX.Element {
               </div>
             </div>
           )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="webhook-secret"
+              className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider"
+            >
+              Signing Secret
+            </label>
+            <div className="flex gap-3">
+              <input
+                id="webhook-secret"
+                className="input py-3 border-transparent font-mono text-sm"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder="leave blank to send unsigned"
+                value={webhookSecret}
+                onChange={(e) => {
+                  setWebhookSecret(e.target.value);
+                  setDirty(true);
+                  setSaveError(null);
+                }}
+              />
+              <button
+                type="button"
+                className="btn-primary px-6 py-3"
+                onClick={() => {
+                  setWebhookSecret(generateWebhookSecret());
+                  setDirty(true);
+                  setSaveError(null);
+                }}
+              >
+                Generate
+              </button>
+            </div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              When set, every delivery carries{" "}
+              <span className="font-mono">x-rootscribe-signature</span> (HMAC-SHA256) and{" "}
+              <span className="font-mono">x-rootscribe-timestamp</span>. Paste the same value
+              into your receiver so it can verify origin.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="instance-id"
+              className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider"
+            >
+              Instance ID
+            </label>
+            <input
+              id="instance-id"
+              className="input py-3 border-transparent font-mono text-sm"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="generated on first run"
+              value={instanceId}
+              onChange={(e) => {
+                setInstanceId(e.target.value);
+                setDirty(true);
+                setSaveError(null);
+              }}
+            />
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              Sent as <span className="font-mono">x-rootscribe-instance</span> on every delivery
+              so a shared receiver can tell installs apart. Letters, digits,{" "}
+              <span className="font-mono">. _ : -</span> only.
+            </p>
+          </div>
         </div>
       </section>
 

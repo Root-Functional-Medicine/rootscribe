@@ -1,5 +1,7 @@
 import { useState, type JSX } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { api } from "../../api.js";
+import { generateWebhookSecret } from "../../lib/webhookSecret.js";
 
 export function WebhookStep({
   onNext,
@@ -9,7 +11,12 @@ export function WebhookStep({
   onBack: () => void;
 }): JSX.Element {
   const [url, setUrl] = useState("");
+  const [secret, setSecret] = useState("");
   const [testing, setTesting] = useState(false);
+  // Read-only here: the server minted this on first run. It is editable on
+  // the Settings page after setup.
+  const cfg = useQuery({ queryKey: ["config"], queryFn: api.config });
+  const instanceId = cfg.data?.config.instanceId ?? null;
   const [testResult, setTestResult] = useState<null | {
     ok: boolean;
     statusCode?: number;
@@ -40,7 +47,14 @@ export function WebhookStep({
     if (url.trim() === "") {
       await api.updateConfig({ webhook: null });
     } else {
-      await api.updateConfig({ webhook: { url: url.trim(), enabled: true } });
+      const trimmedSecret = secret.trim();
+      await api.updateConfig({
+        webhook: {
+          url: url.trim(),
+          enabled: true,
+          ...(trimmedSecret ? { secret: trimmedSecret } : {}),
+        },
+      });
     }
     onNext();
   };
@@ -71,6 +85,46 @@ export function WebhookStep({
             value={url}
             onChange={(e) => { setUrl(e.target.value); setTestResult(null); }}
           />
+        </div>
+
+        <label
+          htmlFor="wizard-webhook-secret"
+          className="font-label text-xs text-on-surface-variant uppercase tracking-wider block pt-2"
+        >
+          Signing Secret
+        </label>
+        <div className="flex gap-3">
+          <input
+            id="wizard-webhook-secret"
+            className="w-full bg-surface-container-highest/50 border-0 rounded-lg py-4 px-4 text-on-surface placeholder:text-on-surface-variant/30 focus:ring-2 focus:ring-primary/40 focus:outline-none font-mono text-sm"
+            type="text"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder="optional — leave blank to send unsigned"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+          />
+          <button
+            type="button"
+            className="btn-primary px-6 py-3 whitespace-nowrap"
+            onClick={() => setSecret(generateWebhookSecret())}
+          >
+            Generate
+          </button>
+        </div>
+        <p className="text-[11px] text-on-surface-variant leading-relaxed">
+          Deliveries are signed with HMAC-SHA256 (<span className="font-mono">x-rootscribe-signature</span>)
+          when a secret is set. Paste the same value into your receiver.
+        </p>
+
+        <div className="bg-surface-container-highest/30 p-4 rounded-lg space-y-1">
+          <p className="font-label text-[10px] text-on-surface-variant uppercase tracking-widest">Instance ID</p>
+          <p className="font-mono text-sm text-primary break-all">
+            {instanceId ?? "generated on first run"}
+          </p>
+          <p className="text-[11px] text-on-surface-variant leading-relaxed">
+            Sent as <span className="font-mono">x-rootscribe-instance</span> on every delivery. Editable later in Settings.
+          </p>
         </div>
 
         {/* Info box */}

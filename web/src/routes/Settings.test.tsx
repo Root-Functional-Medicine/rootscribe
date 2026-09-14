@@ -617,3 +617,112 @@ describe("Settings — poll interval slider", () => {
     ).not.toBeDisabled();
   });
 });
+
+describe("Settings — webhook signing secret + instance id", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  function findConfigPost(): { webhook: unknown; instanceId?: unknown } {
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === "/api/config" &&
+        (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(postCall).toBeDefined();
+    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as {
+      webhook: unknown;
+      instanceId?: unknown;
+    };
+  }
+
+  it("populates the signing secret and instance id from the loaded config", async () => {
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secret: "whsec_from_disk" },
+        instanceId: "inst-from-disk",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    expect(await screen.findByLabelText(/signing secret/i)).toHaveValue("whsec_from_disk");
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-from-disk");
+  });
+
+  it("Generate fills the secret with 64 hex characters and marks the form dirty", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+    expect(screen.getByRole("button", { name: /save settings/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+
+    expect(
+      (screen.getByLabelText(/signing secret/i) as HTMLInputElement).value,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(screen.getByRole("button", { name: /save settings/i })).toBeEnabled();
+  });
+
+  it("save POSTs the secret inside the webhook object and the trimmed instance id", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true },
+        instanceId: "inst-old",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await user.type(await screen.findByLabelText(/signing secret/i), "whsec_typed");
+    const instanceInput = screen.getByLabelText(/instance id/i);
+    await user.clear(instanceInput);
+    await user.type(instanceInput, "  allen-macbook  ");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findConfigPost();
+      expect(body.webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "whsec_typed",
+      });
+      expect(body.instanceId).toBe("allen-macbook");
+    });
+  });
+
+  it("clearing the secret removes it from the webhook object; a blank instance id is omitted (keeps the stored value)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secret: "whsec_old" },
+        instanceId: "inst-keep",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await user.clear(await screen.findByLabelText(/signing secret/i));
+    await user.clear(screen.getByLabelText(/instance id/i));
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findConfigPost();
+      expect(body.webhook).toEqual({ url: "https://hook.example", enabled: true });
+      expect(body).not.toHaveProperty("instanceId");
+    });
+  });
+
+  it("shows a placeholder when the server has not minted an instance id yet", async () => {
+    routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
+    renderWithProviders(<Settings />);
+    expect(await screen.findByLabelText(/instance id/i)).toHaveValue("");
+    expect(screen.getByLabelText(/instance id/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/generated/i),
+    );
+  });
+});

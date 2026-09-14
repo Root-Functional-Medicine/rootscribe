@@ -1,24 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import type { WebhookTestResponse } from "@rootscribe/shared";
+import type { AppConfig, WebhookTestResponse } from "@rootscribe/shared";
 import { WebhookStep } from "./WebhookStep.js";
 import { jsonResponse, renderWithProviders, stubFetch } from "../../test-utils.js";
+import { appConfigFactory } from "../../test-factories/index.js";
 
 // WebhookStep composes:
+// - GET /api/config (reads the server-minted instance id for display)
 // - POST /api/config/test-webhook (dry-run, optional)
-// - POST /api/config (save; sends webhook=null on empty, { url, enabled: true } otherwise)
+// - POST /api/config (save; sends webhook=null on empty, { url, enabled: true[, secret] } otherwise)
 // Every test drives the real jsonFetch pipeline via a stubbed global.fetch.
 
 function routeWebhookFetch(
   stub: ReturnType<typeof stubFetch>,
   opts: {
+    config?: AppConfig;
     test?: WebhookTestResponse | "pending";
     save?: "ok" | "throw";
   } = {},
 ): void {
-  stub.fetch.mockImplementation((input) => {
+  stub.fetch.mockImplementation((input, init) => {
     const url = typeof input === "string" ? input : String(input);
+    const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+    if (url === "/api/config" && method === "GET") {
+      return Promise.resolve(
+        jsonResponse({ config: opts.config ?? appConfigFactory.authenticated().build() }),
+      );
+    }
     if (url.includes("/api/config/test-webhook")) {
       if (opts.test === "pending") return new Promise(() => undefined);
       return Promise.resolve(
@@ -327,5 +336,65 @@ describe("WebhookStep — save + navigation", () => {
     );
     await user.click(screen.getByRole("button", { name: /^back$/i }));
     expect(onBack).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("WebhookStep — signing secret + instance id", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  it("displays the server-minted instance id so the user can copy it into their receiver", async () => {
+    routeWebhookFetch(stub, {
+      config: appConfigFactory.authenticated().withInstanceId("inst-wizard-42").build(),
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    expect(await screen.findByText("inst-wizard-42")).toBeInTheDocument();
+  });
+
+  it("Generate fills the signing secret with 64 hex characters", async () => {
+    const user = userEvent.setup();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+
+    expect(
+      (screen.getByLabelText(/signing secret/i) as HTMLInputElement).value,
+    ).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("clicking Next with a URL and a secret POSTs webhook { url, enabled: true, secret }", async () => {
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />);
+
+    await user.type(
+      screen.getByPlaceholderText(/api\.yourdomain\.com/i),
+      "https://hook.example",
+    );
+    await user.type(screen.getByLabelText(/signing secret/i), "  whsec_wizard  ");
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+
+    await waitFor(() => {
+      const post = stub.fetch.mock.calls.find(
+        ([i, init]) =>
+          String(i) === "/api/config" &&
+          (init as RequestInit | undefined)?.method === "POST",
+      );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String((post?.[1] as RequestInit).body)) as {
+        webhook: unknown;
+      };
+      expect(body.webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "whsec_wizard",
+      });
+    });
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
   });
 });
