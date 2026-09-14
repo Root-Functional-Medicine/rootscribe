@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type JSX } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../../api.js";
 import { generateWebhookSecret } from "../../lib/webhookSecret.js";
 
@@ -10,6 +10,7 @@ export function WebhookStep({
   onNext: () => void;
   onBack: () => void;
 }): JSX.Element {
+  const qc = useQueryClient();
   const [url, setUrl] = useState("");
   const [secret, setSecret] = useState("");
   const [testing, setTesting] = useState(false);
@@ -36,6 +37,13 @@ export function WebhookStep({
     bodySnippet?: string;
     error?: string;
   }>(null);
+  // See Settings: a Test Connection response is only applied if no draft
+  // edit happened while it was in flight.
+  const testGeneration = useRef(0);
+  const invalidateTest = (): void => {
+    testGeneration.current += 1;
+    setTestResult(null);
+  };
 
   const test = async (): Promise<void> => {
     // Trim to match the Test Connection button gate (which uses url.trim())
@@ -45,16 +53,19 @@ export function WebhookStep({
     const trimmed = url.trim();
     if (!trimmed) return;
     setTesting(true);
-    setTestResult(null);
+    invalidateTest();
+    const generation = testGeneration.current;
     try {
       // Sign the test with the draft secret so the receiver verifies the
       // value the user is about to save; blank = let the server use whatever
       // is stored (nothing, on a fresh install).
       const trimmedSecret = secret.trim();
       const r = await api.testWebhook(trimmed, trimmedSecret || undefined);
-      setTestResult(r);
+      if (generation === testGeneration.current) setTestResult(r);
     } catch (err) {
-      setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      if (generation === testGeneration.current) {
+        setTestResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
+      }
     } finally {
       setTesting(false);
     }
@@ -79,6 +90,10 @@ export function WebhookStep({
         },
       });
     }
+    // The app keeps ['config'] fresh for 5s. Without this, Next -> Back
+    // would remount the step from the stale cache (webhook: null), show
+    // Skip, and post null over the webhook we just saved.
+    await qc.invalidateQueries({ queryKey: ["config"] });
     onNext();
   };
 
@@ -106,7 +121,7 @@ export function WebhookStep({
             type="url"
             placeholder="https://api.yourdomain.com/webhooks/rootscribe"
             value={url}
-            onChange={(e) => { urlTouched.current = true; setUrl(e.target.value); setTestResult(null); }}
+            onChange={(e) => { urlTouched.current = true; setUrl(e.target.value); invalidateTest(); }}
           />
         </div>
 
@@ -129,12 +144,12 @@ export function WebhookStep({
                 : "optional — leave blank to send unsigned"
             }
             value={secret}
-            onChange={(e) => { setSecret(e.target.value); setTestResult(null); }}
+            onChange={(e) => { setSecret(e.target.value); invalidateTest(); }}
           />
           <button
             type="button"
             className="btn-primary px-6 py-3 whitespace-nowrap"
-            onClick={() => { setSecret(generateWebhookSecret()); setTestResult(null); }}
+            onClick={() => { setSecret(generateWebhookSecret()); invalidateTest(); }}
           >
             Generate
           </button>

@@ -19,16 +19,25 @@ export const configRouter = Router();
 // a sentinel; the webhook signing secret is removed outright and reported as
 // a boolean — this API has no auth and Docker binds 0.0.0.0, so a LAN client
 // that could read the secret could forge HMAC-valid deliveries.
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
 function redactForClient(cfg: AppConfig): AppConfig {
+  // loadConfig() only type-asserts the file, so `webhook` can be a string or
+  // an array from a hand-edited settings.json. Rest-spreading those would
+  // leak characters / nested objects (including a `secret`) into the
+  // response — anything that is not a plain object is reported as null.
+  //
   // Same rule as the delivery path's usableSecret(): only a non-empty STRING
   // signs, so only that counts as "configured" — a hand-edited non-string
   // must not make Settings claim verification is active.
-  const webhook = cfg.webhook
+  const webhook = isPlainObject(cfg.webhook)
     ? (({ secret: storedSecret, ...rest }) => ({
         ...rest,
         secretConfigured: typeof storedSecret === "string" && storedSecret.length > 0,
-      }))(cfg.webhook)
-    : cfg.webhook;
+      }))(cfg.webhook as AppConfig["webhook"] & object)
+    : null;
   return { ...cfg, token: cfg.token ? "***REDACTED***" : null, webhook };
 }
 

@@ -193,3 +193,25 @@ describe("ensureInstanceId — persistence failure must not become an outage", (
     resetConfigCache();
   });
 });
+
+describe("ensureInstanceId — settings.json that parses but is not a plain object", () => {
+  it.each([
+    ["null", "null"],
+    ["an array", "[1, 2]"],
+    ["a string", JSON.stringify("just-a-string")],
+    ["a number", "42"],
+  ])("treats %s as a failed load: mints in memory, never rewrites the file", async (_label, content) => {
+    // Copilot review on PR #19 round 7: `{ ...DEFAULT_CONFIG, ...parsed }`
+    // accepts any JSON value, so a semantically corrupt file slipped past
+    // the malformed-file guard and got overwritten with defaults + a UUID.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, content);
+
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toMatch(/^[0-9a-f-]{36}$/);
+    expect(readFileSync(settingsFile, "utf8")).toBe(content);
+    resetConfigCache();
+  });
+});

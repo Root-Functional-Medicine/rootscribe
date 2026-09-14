@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import request from "supertest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { AppConfig } from "@rootscribe/shared";
 import { cleanupTempDir, makeTestApp, mkTempConfigDir } from "../helpers/test-server.js";
 
 // The testWebhook + poller imports inside routes/config.ts reach into
@@ -176,6 +177,23 @@ describe("POST /api/config (validation)", () => {
     const get = await request(app).get("/api/config");
     expect(get.body.config.webhook.secretConfigured).toBe(false);
     expect(get.body.config.webhook).not.toHaveProperty("secret");
+  });
+
+  it("returns webhook=null (never rest-spreads) when the stored webhook is not a plain object", async () => {
+    // Copilot review on PR #19 round 7: a hand-edited string or array here
+    // would be spread character-by-character / element-by-element into the
+    // response — an array of objects could even leak nested `secret`s.
+    for (const bad of [
+      "https://hook.example.com/in",
+      [{ url: "https://hook.example.com/in", secret: "leak-me" }],
+      42,
+    ]) {
+      updateConfig({ webhook: bad as unknown as AppConfig["webhook"] });
+      const get = await request(app).get("/api/config");
+      expect(get.status).toBe(200);
+      expect(get.body.config.webhook).toBeNull();
+      expect(JSON.stringify(get.body)).not.toContain("leak-me");
+    }
   });
 
   it("reports secretConfigured=false for a hand-edited non-string secret (matches the unsigned delivery path)", async () => {

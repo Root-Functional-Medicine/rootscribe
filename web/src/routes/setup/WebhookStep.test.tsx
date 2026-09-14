@@ -475,6 +475,63 @@ describe("WebhookStep — signing secret + instance id", () => {
     expect(posted).toBe(false);
   });
 
+  it("ignores a Test Connection response that arrives after the secret draft changed", async () => {
+    const user = userEvent.setup();
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(jsonResponse({ config: appConfigFactory.authenticated().build() }));
+      }
+      if (url.includes("/api/config/test-webhook")) {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+
+    await user.click(screen.getByRole("button", { name: /test connection/i }));
+    await user.type(screen.getByLabelText(/signing secret/i), "changed");
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("invalidates the shared config query after saving so a Back navigation cannot Skip-delete the just-saved webhook", async () => {
+    // Copilot review on PR #19 round 7: the app keeps ['config'] fresh for
+    // 5s, so without invalidation a remount after Next -> Back would hydrate
+    // from the stale cache (webhook: null), show Skip, and post null.
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    routeWebhookFetch(stub);
+    renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />);
+    await screen.findByText(/instance id/i);
+    const getsBefore = stub.fetch.mock.calls.filter(
+      ([i, init]) =>
+        String(i) === "/api/config" &&
+        ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase() === "GET",
+    ).length;
+
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+    await waitFor(() => expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+    await waitFor(() => {
+      const getsAfter = stub.fetch.mock.calls.filter(
+        ([i, init]) =>
+          String(i) === "/api/config" &&
+          ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase() === "GET",
+      ).length;
+      expect(getsAfter).toBeGreaterThan(getsBefore);
+    });
+  });
+
   it("tells a fresh wizard that a blank field sends unsigned", async () => {
     routeWebhookFetch(stub);
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);

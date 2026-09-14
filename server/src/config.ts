@@ -22,9 +22,18 @@ export function loadConfig(): AppConfig {
   }
   try {
     const raw = readFileSync(p, "utf8");
-    const parsed = JSON.parse(raw) as Partial<AppConfig>;
+    const parsed: unknown = JSON.parse(raw);
+    // Valid JSON that is not a plain object (null, an array, a string, a
+    // number) is just as corrupt as unparseable text: spreading it would
+    // yield defaults (or index keys / characters), and automatic writers
+    // would then overwrite a file an operator could still repair by hand.
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new TypeError(`settings.json must be a JSON object, got ${
+        parsed === null ? "null" : Array.isArray(parsed) ? "array" : typeof parsed
+      }`);
+    }
     loadFailed = false;
-    cached = { ...DEFAULT_CONFIG, ...parsed };
+    cached = { ...DEFAULT_CONFIG, ...(parsed as Partial<AppConfig>) };
     return cached;
   } catch (err) {
     logger.error({ err, path: p }, "failed to parse settings.json — using defaults");

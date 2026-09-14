@@ -1,4 +1,4 @@
-import { useState, useEffect, type JSX } from "react";
+import { useState, useEffect, useRef, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { api } from "../api.js";
@@ -40,6 +40,15 @@ export function Settings(): JSX.Element {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
+  // Bumped whenever the URL or secret draft changes and on every Test click.
+  // A test() response is only applied if the generation it started with is
+  // still current — otherwise a slow response for the OLD draft would be
+  // presented as verification of the new one.
+  const testGeneration = useRef(0);
+  const invalidateTest = (): void => {
+    testGeneration.current += 1;
+    setTestResult(null);
+  };
 
   useEffect(() => {
     if (!cfg.data) return;
@@ -107,11 +116,13 @@ export function Settings(): JSX.Element {
   };
 
   const test = async (): Promise<void> => {
-    setTestResult(null);
+    invalidateTest();
+    const generation = testGeneration.current;
     try {
       // Pass the draft so the test delivery is signed with the value the
       // user is about to save, not the previously stored one.
       const r = await api.testWebhook(webhookUrl.trim(), draftSecret());
+      if (generation !== testGeneration.current) return; // draft changed mid-flight
       const snippet = r.bodySnippet?.slice(0, 400).trim();
       let message: string;
       if (r.error) {
@@ -122,6 +133,7 @@ export function Settings(): JSX.Element {
       }
       setTestResult({ ok: r.ok, message });
     } catch (err) {
+      if (generation !== testGeneration.current) return;
       setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
     }
   };
@@ -232,7 +244,7 @@ export function Settings(): JSX.Element {
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
                 setDirty(true);
-                setTestResult(null);
+                invalidateTest();
                 // Clear any prior save error so it doesn't linger after the
                 // user starts correcting the value that caused it.
                 setSaveError(null);
@@ -298,8 +310,8 @@ export function Settings(): JSX.Element {
                   setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
-                  // A prior Test result described a different secret.
-                  setTestResult(null);
+                  // A prior (or in-flight) Test described a different secret.
+                  invalidateTest();
                 }}
               />
               <button
@@ -310,7 +322,7 @@ export function Settings(): JSX.Element {
                   setClearSecret(false);
                   setDirty(true);
                   setSaveError(null);
-                  setTestResult(null);
+                  invalidateTest();
                 }}
               >
                 Generate
@@ -324,7 +336,7 @@ export function Settings(): JSX.Element {
                     setClearSecret(true);
                     setDirty(true);
                     setSaveError(null);
-                    setTestResult(null);
+                    invalidateTest();
                   }}
                 >
                   Clear

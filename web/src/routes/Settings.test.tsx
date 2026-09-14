@@ -828,6 +828,41 @@ describe("Settings — webhook signing secret + instance id", () => {
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
   });
 
+  it("ignores a Test response that arrives after the secret draft changed (in-flight result is stale)", async () => {
+    // Copilot review on PR #19 round 7: clearing testResult on edit doesn't
+    // stop a pending test() from calling setTestResult(r) for the OLD draft.
+    const user = userEvent.setup();
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+          }),
+        );
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await user.type(screen.getByLabelText(/signing secret/i), "changed");
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+
+    // Give the stale promise every chance to land, then assert it did not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
   it("shows a placeholder when the server has not minted an instance id yet", async () => {
     routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
     renderWithProviders(<Settings />);
