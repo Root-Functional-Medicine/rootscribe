@@ -136,6 +136,9 @@ configRouter.post("/", (req, res) => {
 const TestWebhookSchema = z.object({
   url: z.string().url(),
   secret: z.string().optional(),
+  // Draft instance id from the Settings form, validated exactly like the
+  // persisted one so an unsafe value can't be stamped into the header.
+  instanceId: z.string().trim().regex(INSTANCE_ID_PATTERN).optional(),
 });
 
 configRouter.post("/test-webhook", async (req, res) => {
@@ -147,7 +150,7 @@ configRouter.post("/test-webhook", async (req, res) => {
     res.status(400).json({ ok: false, error: `invalid ${field}` });
     return;
   }
-  const result = await testWebhook(parsed.data.url, parsed.data.secret);
+  const result = await testWebhook(parsed.data.url, parsed.data.secret, parsed.data.instanceId);
   res.json(result);
 });
 

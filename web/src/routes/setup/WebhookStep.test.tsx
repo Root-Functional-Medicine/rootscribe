@@ -3,7 +3,7 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { AppConfig, WebhookTestResponse } from "@rootscribe/shared";
 import { WebhookStep } from "./WebhookStep.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../../test-utils.js";
+import { createTestQueryClient, jsonResponse, renderWithProviders, stubFetch } from "../../test-utils.js";
 import { appConfigFactory } from "../../test-factories/index.js";
 
 // WebhookStep composes:
@@ -443,6 +443,24 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
     renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
     expect(screen.getByRole("button", { name: /^skip$/i })).toBeDisabled();
+  });
+
+  it("keeps the primary button disabled while a refetch is in flight even when cached data (webhook: null) exists", async () => {
+    // Copilot review on PR #19 round 9: isPending is false once ANY data is
+    // cached, so a remount with stale cached webhook=null during a refetch
+    // rendered an enabled Skip that could post null over a stored webhook.
+    const qc = createTestQueryClient();
+    qc.setQueryData(["config"], { config: appConfigFactory.authenticated().build() });
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") return new Promise(() => undefined);
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+
+    // staleTime 0 in the test client -> mount triggers a refetch that never resolves.
+    await waitFor(() => expect(screen.getByRole("button", { name: /^skip$/i })).toBeDisabled());
   });
 
   it("when the config query failed and the URL is untouched, Skip proceeds WITHOUT posting webhook=null", async () => {

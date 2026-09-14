@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, chmodSync, renameSync, unlinkSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_CONFIG, isValidInstanceId, type AppConfig } from "@rootscribe/shared";
 import { ensureConfigDir, settingsPath } from "./paths.js";
@@ -46,7 +46,24 @@ export function loadConfig(): AppConfig {
 export function saveConfig(next: AppConfig): void {
   ensureConfigDir();
   const p = settingsPath();
-  writeFileSync(p, JSON.stringify(next, null, 2), { mode: 0o600 });
+  // Atomic replace: write a sibling temp file, then rename it over the
+  // target. writeFileSync on the target itself truncates first, so a full
+  // disk or an interrupted process (e.g. during the automatic
+  // ensureInstanceId() write at startup) could leave a half-written or
+  // empty settings.json — losing a valid token/webhook configuration. With
+  // temp + rename the old file survives any failure before the rename.
+  const tmp = `${p}.${process.pid}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(next, null, 2), { mode: 0o600 });
+    renameSync(tmp, p);
+  } catch (err) {
+    try {
+      unlinkSync(tmp);
+    } catch {
+      // Nothing to clean up (the temp write itself failed) or already gone.
+    }
+    throw err;
+  }
   try {
     chmodSync(p, 0o600);
   } catch {

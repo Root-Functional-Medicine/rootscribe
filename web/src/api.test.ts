@@ -257,6 +257,15 @@ describe("api.testWebhook", () => {
     expect(JSON.parse(String(init.body))).toEqual({ url: "https://hook.example" });
   });
 
+  it("sends the draft `instanceId` when supplied and omits it otherwise", async () => {
+    await api.testWebhook("https://hook.example", "s", "inst-draft");
+    await api.testWebhook("https://hook.example", "s");
+    const first = JSON.parse(String((fetchMock.mock.calls[0]![1] as RequestInit).body));
+    const second = JSON.parse(String((fetchMock.mock.calls[1]![1] as RequestInit).body));
+    expect(first).toEqual({ url: "https://hook.example", secret: "s", instanceId: "inst-draft" });
+    expect(second).toEqual({ url: "https://hook.example", secret: "s" });
+  });
+
   it("sends the draft `secret` when supplied, including an explicit empty string (test unsigned)", async () => {
     await api.testWebhook("https://hook.example", "draft");
     await api.testWebhook("https://hook.example", "");

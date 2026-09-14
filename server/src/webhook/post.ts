@@ -54,18 +54,20 @@ function usableSecret(secret: unknown): string | undefined {
  * `secret` is the key to sign with — the persisted one for real deliveries,
  * or a caller-supplied draft for test sends (so Settings can verify a value
  * the user has typed but not yet saved). Empty/undefined/non-string means
- * unsigned.
+ * unsigned. `instanceId` likewise overrides the persisted instance id for
+ * test sends only; real deliveries always use ensureInstanceId().
  */
 function deliveryHeaders(
   event: WebhookEvent,
   body: string,
   rawSecret: unknown,
+  instanceId?: string,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
     "user-agent": USER_AGENT,
     "x-rootscribe-event": event,
-    "x-rootscribe-instance": ensureInstanceId(),
+    "x-rootscribe-instance": instanceId || ensureInstanceId(),
   };
   const secret = usableSecret(rawSecret);
   if (secret) {
@@ -249,11 +251,15 @@ function buildTestPayload(): WebhookPayload & { test: true } {
  *
  * `secret` overrides the persisted signing secret so the UI can exercise a
  * draft value before it is saved: undefined = sign with whatever is stored,
- * "" = send unsigned, non-empty = sign with that value.
+ * "" = send unsigned, non-empty = sign with that value. `instanceId` does
+ * the same for the `x-rootscribe-instance` header (undefined/"" = the
+ * persisted id), so a passing Test describes exactly the headers Save
+ * will produce. The route validates it as header-safe before it gets here.
  */
 export async function testWebhook(
   url: string,
   secret?: string,
+  instanceId?: string,
 ): Promise<{ ok: boolean; statusCode?: number; bodySnippet?: string; error?: string; durationMs: number }> {
   const started = Date.now();
   const body = JSON.stringify(buildTestPayload());
@@ -262,7 +268,7 @@ export async function testWebhook(
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        ...deliveryHeaders("transcript_ready", body, signingSecret),
+        ...deliveryHeaders("transcript_ready", body, signingSecret, instanceId),
         "x-rootscribe-test": "1",
       },
       body,

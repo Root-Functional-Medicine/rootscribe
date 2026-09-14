@@ -690,6 +690,26 @@ describe("testWebhook — signing + instance headers", () => {
     expect(v1).not.toBe(expectedSignature("persisted-secret", t, String(init.body)));
   });
 
+  it("stamps a caller-supplied draft instance id so Test matches what Save will send", async () => {
+    // Copilot review on PR #19 round 9: Settings lets the user edit the
+    // instance id, but Test used the persisted one — a passing test could
+    // describe different headers than the saved configuration.
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-persisted",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", undefined, "inst-draft");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-draft");
+    // The persisted value is untouched — this is a per-request override.
+    expect(loadConfig().instanceId).toBe("inst-persisted");
+  });
+
   it("an explicitly empty draft secret sends an unsigned test even when one is persisted", async () => {
     updateConfig({
       webhook: { url: "https://hook.example", enabled: true, secret: "persisted-secret" },

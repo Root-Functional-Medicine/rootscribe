@@ -121,7 +121,11 @@ export function Settings(): JSX.Element {
     try {
       // Pass the draft so the test delivery is signed with the value the
       // user is about to save, not the previously stored one.
-      const r = await api.testWebhook(webhookUrl.trim(), draftSecret());
+      const r = await api.testWebhook(
+        webhookUrl.trim(),
+        draftSecret(),
+        instanceId.trim() || undefined,
+      );
       if (generation !== testGeneration.current) return; // draft changed mid-flight
       const snippet = r.bodySnippet?.slice(0, 400).trim();
       let message: string;
@@ -371,6 +375,8 @@ export function Settings(): JSX.Element {
                 setInstanceId(e.target.value);
                 setDirty(true);
                 setSaveError(null);
+                // Test stamps this value, so a prior result no longer applies.
+                invalidateTest();
               }}
             />
             <p className="text-[11px] text-on-surface-variant leading-relaxed">

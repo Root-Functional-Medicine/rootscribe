@@ -381,6 +381,7 @@ describe("POST /api/config/test-webhook", () => {
     expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
       "https://hook.example/v1/ingest",
       undefined,
+      undefined,
     );
   });
 
@@ -395,7 +396,32 @@ describe("POST /api/config/test-webhook", () => {
     expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
       "https://hook.example/v1/ingest",
       "draft-secret",
+      undefined,
     );
+  });
+
+  it("forwards a draft instanceId so Test stamps the value about to be saved", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "s", instanceId: "  inst-draft  " });
+
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "s",
+      "inst-draft",
+    );
+  });
+
+  it("rejects a draft instanceId that is not header-safe, naming the field", async () => {
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", instanceId: "two words" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/instanceId/);
+    expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
   });
 
   it("forwards an explicitly empty secret (test unsigned) distinct from an omitted one", async () => {
@@ -408,6 +434,7 @@ describe("POST /api/config/test-webhook", () => {
     expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
       "https://hook.example/v1/ingest",
       "",
+      undefined,
     );
   });
 

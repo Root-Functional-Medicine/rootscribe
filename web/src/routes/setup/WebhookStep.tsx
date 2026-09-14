@@ -219,9 +219,11 @@ export function WebhookStep({
         </button>
         <button
           className="btn-primary px-8 py-3 flex items-center gap-3 shadow-lg shadow-primary/10"
-          // Gated until the config query settles: before that, url may still
-          // be "" for a stored webhook and Skip would delete it.
-          disabled={cfg.isPending}
+          // Gated until the config query settles AND no refetch is in flight:
+          // isPending is false as soon as any data is cached, so a remount
+          // with stale cached webhook=null during a refetch would otherwise
+          // enable a Skip that posts null over a stored webhook.
+          disabled={cfg.isPending || cfg.isFetching}
           onClick={() => void saveAndContinue()}
         >
           {url.trim() ? "Next" : "Skip"}

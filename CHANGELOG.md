@@ -39,9 +39,9 @@ Phase 3c of the Rootstock integration epic (DEVX-1001).
   Signing Secret input with Generate and Clear buttons (32 CSPRNG bytes
   as hex) and an editable Instance ID field. The setup wizard's webhook
   step gets the same secret input plus a read-only instance id display.
-  `POST /api/config/test-webhook` accepts the draft `secret` so the Test
-  button verifies the value about to be saved, not the previously stored
-  one.
+  `POST /api/config/test-webhook` accepts the draft `secret` and
+  `instanceId` so the Test button verifies exactly the headers a save
+  would produce, not the previously stored values.
 - **README "Webhook signing" section** with the header table and a Node
   verification recipe (timing-safe compare + replay tolerance).
 - Playwright journey covering secret + instance id persistence through
@@ -50,6 +50,10 @@ Phase 3c of the Rootstock integration epic (DEVX-1001).
 
 ### Changed
 
+- `settings.json` is now written atomically (temp file + rename) so an
+  interrupted save cannot truncate a valid configuration; a file that
+  is unparseable or not a JSON object is left untouched and the server
+  runs on defaults (with an in-memory instance id) until it is repaired.
 - Without a secret, the server now logs a one-time warning on the first
   unsigned delivery so operators know receivers cannot verify origin.
 - Outbound webhook `User-Agent` is `rootscribe/0.2.0`; the inbox MCP

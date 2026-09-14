@@ -148,6 +148,9 @@ export interface WebhookTestRequest {
   // Draft signing secret from the form. Omitted = use the stored secret,
   // "" = send unsigned, non-empty = sign with this value.
   secret?: string;
+  // Draft instance id from the form (header-safe token). Omitted = use the
+  // stored id, so a passing Test describes the headers Save will send.
+  instanceId?: string;
 }
 
 export interface WebhookTestResponse {

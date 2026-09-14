@@ -775,6 +775,39 @@ describe("Settings — webhook signing secret + instance id", () => {
     });
   });
 
+  it("Test sends the edited instance id draft, and omits it when the field is blank", async () => {
+    // Copilot review on PR #19 round 9: Test must stamp the instance id the
+    // user is about to save, not the previously stored one.
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true },
+        instanceId: "inst-old",
+      }),
+    });
+    renderWithProviders(<Settings />);
+    const instanceInput = await screen.findByLabelText(/instance id/i);
+    await user.clear(instanceInput);
+    await user.type(instanceInput, "  inst-draft  ");
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config/test-webhook")).toEqual({
+        url: "https://hook.example",
+        instanceId: "inst-draft",
+      });
+    });
+
+    await user.clear(instanceInput);
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      const calls = stub.fetch.mock.calls.filter(([i]) => String(i) === "/api/config/test-webhook");
+      expect(calls.length).toBe(2);
+      expect(JSON.parse(String((calls[1]![1] as RequestInit).body))).toEqual({
+        url: "https://hook.example",
+      });
+    });
+  });
+
   it("Test omits the secret when the field is untouched (server signs with the stored one) and sends '' after Clear", async () => {
     const user = userEvent.setup();
     routeSettingsFetch(stub, {

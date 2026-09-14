@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -166,30 +166,56 @@ describe("ensureInstanceId — persistence failure must not become an outage", (
   // and developer machines are non-root, which is where this matters.
   const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
-  it.skipIf(isRoot)("falls back to an in-memory id (no throw) when settings.json cannot be written", async () => {
-    // Copilot review on PR #19 round 5: saveConfig() throwing (read-only
-    // file, full disk) would surface in main() before listen() and, on the
-    // delivery path, inside fireRaw's try before fetch — turning a readable
-    // config into a startup or delivery outage just to add a header.
+  it.skipIf(isRoot)("falls back to an in-memory id (no throw) when settings.json cannot be written, leaving the file intact", async () => {
+    // Copilot review on PR #19 rounds 5 + 9: saveConfig() throwing (full
+    // disk, unwritable directory) would surface in main() before listen()
+    // and, on the delivery path, inside fireRaw's try before fetch. And
+    // because the write is temp-file + rename, a failure must leave the
+    // ORIGINAL file byte-for-byte intact rather than truncated. The
+    // directory (not the file) is made unwritable: rename over a read-only
+    // file succeeds on POSIX, so a read-only file would not exercise this.
     const settingsFile = path.join(tmpDir, "settings.json");
     const original = JSON.stringify({ token: "t" });
     writeFileSync(settingsFile, original);
-    chmodSync(settingsFile, 0o400);
+    chmodSync(tmpDir, 0o500);
 
-    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    try {
+      const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+      resetConfigCache();
+
+      let id = "";
+      expect(() => {
+        id = ensureInstanceId();
+      }).not.toThrow();
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      // Stable for the process even though it could not be persisted...
+      expect(ensureInstanceId()).toBe(id);
+      expect(loadConfig().instanceId).toBe(id);
+      // ...and the file is exactly as it was — not truncated, no temp left.
+      expect(readFileSync(settingsFile, "utf8")).toBe(original);
+      expect(readdirSync(tmpDir).filter((f) => f.startsWith("settings.json"))).toEqual(["settings.json"]);
+      resetConfigCache();
+    } finally {
+      chmodSync(tmpDir, 0o700);
+    }
+  });
+});
+
+describe("saveConfig — atomic write", () => {
+  it("replaces settings.json via a temp file + rename and leaves no temp file behind", async () => {
+    // Copilot review on PR #19 round 9: writeFileSync on the target
+    // truncates first, so an interrupted automatic write (ensureInstanceId
+    // at startup) could leave a half-written or empty file. Temp + rename
+    // makes the replacement all-or-nothing.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, JSON.stringify({ token: "before" }));
+    const { loadConfig, resetConfigCache, saveConfig } = await import("./config.js");
     resetConfigCache();
 
-    let id = "";
-    expect(() => {
-      id = ensureInstanceId();
-    }).not.toThrow();
-    expect(id).toMatch(/^[0-9a-f-]{36}$/);
-    // Stable for the process even though it could not be persisted...
-    expect(ensureInstanceId()).toBe(id);
-    expect(loadConfig().instanceId).toBe(id);
-    // ...and the file is exactly as it was.
-    expect(readFileSync(settingsFile, "utf8")).toBe(original);
-    chmodSync(settingsFile, 0o600);
+    saveConfig({ ...loadConfig(), token: "after" });
+
+    expect(JSON.parse(readFileSync(settingsFile, "utf8")).token).toBe("after");
+    expect(readdirSync(tmpDir).filter((f) => f.includes("settings"))).toEqual(["settings.json"]);
     resetConfigCache();
   });
 });
