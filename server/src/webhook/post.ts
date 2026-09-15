@@ -166,18 +166,23 @@ async function fireRaw(
   event: WebhookEvent,
 ): Promise<boolean> {
   const body = JSON.stringify(payload);
-  // Capture the signing key ONCE per delivery. A secret rotated in Settings
-  // during the 5s/30s backoff must not re-sign the retry with the new key —
-  // the receiver still expects the old one and a transient 503 would turn
-  // into a permanent rejection. The timestamp/signature are still
-  // recomputed per attempt inside deliveryHeaders().
+  // Capture the signing key AND the instance id ONCE per delivery. A secret
+  // rotated in Settings during the 5s/30s backoff must not re-sign the
+  // retry with the new key — the receiver still expects the old one and a
+  // transient 503 would turn into a permanent rejection. Likewise an
+  // instance id changed mid-backoff must not re-stamp the retry: it is the
+  // SAME logical delivery, and a receiver keying dedup or attribution on
+  // (instance, event) would otherwise see the retry as a second install.
+  // The timestamp/signature are still recomputed per attempt inside
+  // deliveryHeaders().
   const secret = loadConfig().webhook?.secret;
+  const instanceId = ensureInstanceId();
   for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
     const started = Date.now();
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: deliveryHeaders(event, body, secret),
+        headers: deliveryHeaders(event, body, secret, instanceId),
         body,
       });
       const text = (await res.text().catch(() => "")).slice(0, 500);

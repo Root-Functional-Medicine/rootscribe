@@ -8,7 +8,7 @@ import {
   statfsSync,
 } from "node:fs";
 import path from "node:path";
-import { INSTANCE_ID_PATTERN, type AppConfig } from "@rootscribe/shared";
+import { INSTANCE_ID_PATTERN, type AppConfig, type AppConfigResponse } from "@rootscribe/shared";
 import { loadConfig, updateConfig } from "../config.js";
 import { testWebhook } from "../webhook/post.js";
 import { poller } from "../sync/poller.js";
@@ -23,7 +23,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function redactForClient(cfg: AppConfig): AppConfig {
+function redactForClient(cfg: AppConfig): AppConfigResponse {
   // loadConfig() only type-asserts the file, so `webhook` can be a string or
   // an array from a hand-edited settings.json. Rest-spreading those would
   // leak characters / nested objects (including a `secret`) into the

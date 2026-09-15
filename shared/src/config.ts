@@ -21,6 +21,13 @@ export interface WebhookConfig {
   secretConfigured?: boolean;
 }
 
+// The REDACTED shape of a webhook config as GET/POST /api/config return it:
+// `secret` is stripped server-side (the API has no auth and may be bound to
+// 0.0.0.0) and `secretConfigured` reports whether one is stored. Keeping
+// this distinct from WebhookConfig means a client cannot even type-check a
+// read of `config.webhook.secret` — the field is write-only on the wire.
+export type WebhookConfigResponse = Omit<WebhookConfig, "secret">;
+
 export interface AppConfig {
   version: number;
   setupComplete: boolean;
@@ -45,6 +52,13 @@ export interface AppConfig {
   // booted for the first time.
   instanceId: string | null;
 }
+
+// What GET/POST /api/config actually return: AppConfig with the webhook
+// narrowed to its redacted read shape. POST still ACCEPTS Partial<AppConfig>
+// (that is where `secret` travels); only the response is narrowed.
+export type AppConfigResponse = Omit<AppConfig, "webhook"> & {
+  webhook: WebhookConfigResponse | null;
+};
 
 // `instanceId` is stamped verbatim into the `x-rootscribe-instance` header,
 // so it must be a conservative header-safe token: undici's fetch throws on

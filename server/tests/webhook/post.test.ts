@@ -594,6 +594,38 @@ describe("fireWebhookForRecording — signing + instance headers", () => {
     }
   });
 
+  it("captures the instance id once per delivery so a change mid-backoff keeps every attempt's identity consistent", async () => {
+    // Copilot review on PR #19 round 23 (suppressed finding): the secret was
+    // captured once but deliveryHeaders() re-read the instance id on every
+    // attempt, so a Settings change during the 5s/30s backoff sent the SAME
+    // logical delivery under two identities — a receiver keying dedup or
+    // attribution on (instance, event) would treat the retry as a second
+    // install.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-before",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    // Attempt 1 has fired (503) and the 5s backoff is armed. Change the id now.
+    await vi.advanceTimersByTimeAsync(0);
+    updateConfig({ instanceId: "inst-after" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const ids = fetchMock.mock.calls.map(
+      (call) => ((call[1] as RequestInit).headers as Record<string, string>)["x-rootscribe-instance"],
+    );
+    expect(ids).toEqual(["inst-before", "inst-before"]);
+  });
+
   it("each retry attempt carries a FRESH timestamp and signature (headers are not computed once before the loop)", async () => {
     // Copilot review on PR #19 round 19 (suppressed finding): with Date
     // real and only timers faked, every attempt could share one second and

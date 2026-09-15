@@ -1,4 +1,4 @@
-import type { AppConfig } from "./config.js";
+import type { AppConfigResponse } from "./config.js";
 import type {
   RecordingRow,
   RecordingDetail,
@@ -140,7 +140,7 @@ export interface SyncStatusResponse {
 }
 
 export interface ConfigResponse {
-  config: AppConfig;
+  config: AppConfigResponse;
 }
 
 export interface WebhookTestRequest {
