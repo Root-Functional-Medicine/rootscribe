@@ -6,8 +6,27 @@ export interface BindConfig {
 export interface WebhookConfig {
   url: string;
   enabled: boolean;
+  // Shared secret used to HMAC-SHA256 sign outbound deliveries. When set,
+  // every webhook carries `x-rootscribe-signature` + `x-rootscribe-timestamp`
+  // so receivers can verify origin. Never sent as a header itself, and never
+  // returned by GET/POST /api/config (the API has no auth and may be bound
+  // to 0.0.0.0) — clients see `secretConfigured` instead. On POST the field
+  // is tri-state: omitted = keep the stored secret, "" = clear it, non-empty
+  // = replace it.
   secret?: string;
+  // Response-only flag: true when a non-empty string secret is stored. The
+  // secret itself IS accepted and persisted on POST (see above); this flag
+  // is the read side. PatchSchema does not list `secretConfigured`, so Zod
+  // drops it if a client echoes it back — it is never persisted.
+  secretConfigured?: boolean;
 }
+
+// The REDACTED shape of a webhook config as GET/POST /api/config return it:
+// `secret` is stripped server-side (the API has no auth and may be bound to
+// 0.0.0.0) and `secretConfigured` reports whether one is stored. Keeping
+// this distinct from WebhookConfig means a client cannot even type-check a
+// read of `config.webhook.secret` — the field is write-only on the wire.
+export type WebhookConfigResponse = Omit<WebhookConfig, "secret">;
 
 export interface AppConfig {
   version: number;
@@ -26,6 +45,31 @@ export interface AppConfig {
   // buildJiraUrl(baseUrl, key) — trailing slashes on either side are
   // normalized, so users can store it with or without one.
   jiraBaseUrl: string;
+  // Stable identifier for this RootScribe install, sent as
+  // `x-rootscribe-instance` on every outbound webhook so one receiver can tell
+  // several developers' instances apart. Generated once (UUID) on first run
+  // by the server; editable in Settings. Null only until the server has
+  // booted for the first time.
+  instanceId: string | null;
+}
+
+// What GET/POST /api/config actually return: AppConfig with the webhook
+// narrowed to its redacted read shape. POST still ACCEPTS Partial<AppConfig>
+// (that is where `secret` travels); only the response is narrowed.
+export type AppConfigResponse = Omit<AppConfig, "webhook"> & {
+  webhook: WebhookConfigResponse | null;
+};
+
+// `instanceId` is stamped verbatim into the `x-rootscribe-instance` header,
+// so it must be a conservative header-safe token: undici's fetch throws on
+// control characters / non-Latin-1 bytes (which would break EVERY delivery),
+// and spaces make the value awkward to match on the receiving side. Enforced
+// on API input (POST /api/config) AND on the persisted value (the server
+// re-mints a UUID when a hand-edited settings.json fails this check).
+export const INSTANCE_ID_PATTERN = /^[A-Za-z0-9._:-]{1,128}$/;
+
+export function isValidInstanceId(value: unknown): value is string {
+  return typeof value === "string" && INSTANCE_ID_PATTERN.test(value);
 }
 
 export const DEFAULT_CONFIG: AppConfig = {
@@ -41,4 +85,5 @@ export const DEFAULT_CONFIG: AppConfig = {
   bind: { host: "127.0.0.1", port: 44471 },
   lanToken: null,
   jiraBaseUrl: "https://rootfunctionalmedicine.atlassian.net/browse/",
+  instanceId: null,
 };

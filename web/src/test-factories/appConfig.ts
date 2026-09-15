@@ -46,6 +46,10 @@ class AppConfigFactory extends Factory<AppConfig> {
   withWebhook(webhook: WebhookConfig): this {
     return this.params({ webhook }) as this;
   }
+
+  withInstanceId(instanceId: string): this {
+    return this.params({ instanceId }) as this;
+  }
 }
 
 export const appConfigFactory = AppConfigFactory.define(() => ({

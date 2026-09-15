@@ -248,6 +248,9 @@ export const SEED_CONFIG_BASE = {
   pollIntervalMinutes: 10,
   jiraBaseUrl: "https://example.atlassian.net/browse/",
   webhook: null,
+  // Fixed rather than minted so the Settings journey can assert on the
+  // rendered value and on what the reset restores.
+  instanceId: "e2e-seed-instance",
 } as const;
 
 export function seedConfig(port: number = DEFAULT_BIND_PORT): typeof SEED_CONFIG_BASE & {

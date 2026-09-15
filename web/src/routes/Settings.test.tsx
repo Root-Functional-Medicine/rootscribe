@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type {
   AppConfig,
@@ -8,7 +8,7 @@ import type {
 } from "@rootscribe/shared";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { Settings } from "./Settings.js";
-import { jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
+import { createTestQueryClient, jsonResponse, renderWithProviders, stubFetch } from "../test-utils.js";
 import {
   appConfigFactory,
   syncStatusResponseFactory,
@@ -322,6 +322,10 @@ describe("Settings — save button", () => {
     const jiraInput = screen.getByPlaceholderText(DEFAULT_CONFIG.jiraBaseUrl);
     await user.type(jiraInput, "  https://myco.atlassian.net/browse/  ");
 
+    // Only edited fields are sent (per-field touched tracking), so move the
+    // slider too for the pollIntervalMinutes assertion below to apply.
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "12" } });
+
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
@@ -349,21 +353,19 @@ describe("Settings — save button", () => {
       url: "https://hook.example",
       enabled: true,
     });
-    expect(body.pollIntervalMinutes).toBe(10);
+    expect(body.pollIntervalMinutes).toBe(12);
     // Trimmed Jira URL made it to the wire.
     expect(body.jiraBaseUrl).toBe("https://myco.atlassian.net/browse/");
   });
 
-  it("falls back to DEFAULT_CONFIG.jiraBaseUrl when the Jira field is left blank", async () => {
+  it("falls back to DEFAULT_CONFIG.jiraBaseUrl when the user clears the Jira field", async () => {
     const user = userEvent.setup();
     routeSettingsFetch(stub, {
-      config: makeConfig({ webhook: null, jiraBaseUrl: "" }),
+      config: makeConfig({ webhook: null, jiraBaseUrl: "https://old.atlassian.net/browse/" }),
     });
     renderWithProviders(<Settings />);
-    const webhookInput = await screen.findByPlaceholderText(
-      /api\.yourdomain\.com/i,
-    );
-    await user.type(webhookInput, "https://hook.example");
+    const jiraInput = await screen.findByPlaceholderText(DEFAULT_CONFIG.jiraBaseUrl);
+    await user.clear(jiraInput);
     await user.click(screen.getByRole("button", { name: /save settings/i }));
 
     await waitFor(() => {
@@ -615,5 +617,850 @@ describe("Settings — poll interval slider", () => {
     expect(
       screen.getByRole("button", { name: /save settings/i }),
     ).not.toBeDisabled();
+  });
+});
+
+describe("Settings — webhook signing secret + instance id", () => {
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  function findPost(url: string): Record<string, unknown> {
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === url && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(postCall).toBeDefined();
+    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  // The server never returns the secret (GET /api/config redacts it and
+  // reports `secretConfigured`), so the field is write-only: it starts
+  // empty, tells the user whether one is stored, and an untouched field
+  // means "keep what is stored" on save.
+  it("shows the configured state without revealing the secret, and populates the instance id", async () => {
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+        instanceId: "inst-from-disk",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    const secretInput = await screen.findByLabelText(/signing secret/i);
+    expect(secretInput).toHaveValue("");
+    expect(secretInput).toHaveAttribute("placeholder", expect.stringMatching(/configured/i));
+    expect(screen.getByRole("button", { name: /^clear$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-from-disk");
+  });
+
+  it("offers no Clear button and an 'unsigned' hint when no secret is stored", async () => {
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: false },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    const secretInput = await screen.findByLabelText(/signing secret/i);
+    expect(secretInput).toHaveAttribute("placeholder", expect.stringMatching(/unsigned/i));
+    expect(screen.queryByRole("button", { name: /^clear$/i })).not.toBeInTheDocument();
+  });
+
+  it("Generate fills the secret with 64 hex characters and marks the form dirty", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+    expect(screen.getByRole("button", { name: /save settings/i })).toBeDisabled();
+
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+
+    expect(
+      (screen.getByLabelText(/signing secret/i) as HTMLInputElement).value,
+    ).toMatch(/^[0-9a-f]{64}$/);
+    expect(screen.getByRole("button", { name: /save settings/i })).toBeEnabled();
+  });
+
+  it("save POSTs a typed secret inside the webhook object and the trimmed instance id", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true },
+        instanceId: "inst-old",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await user.type(await screen.findByLabelText(/signing secret/i), "  whsec_typed  ");
+    const instanceInput = screen.getByLabelText(/instance id/i);
+    await user.clear(instanceInput);
+    await user.type(instanceInput, "  allen-macbook  ");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body.webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "whsec_typed",
+      });
+      expect(body.instanceId).toBe("allen-macbook");
+    });
+  });
+
+  it("omits `webhook` entirely when neither the URL nor the secret was edited (stored webhook + secret are kept); a blank instance id is omitted too", async () => {
+    // Copilot review on PR #19 round 18 (suppressed finding): re-posting the
+    // hydrated webhook on an unrelated save could send a stale cached value
+    // (even null) over the server's current URL + secret. The server treats
+    // an omitted `webhook` as "keep", so only send it when it was edited.
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+        instanceId: "inst-keep",
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    // Edit something unrelated so Save is enabled, and blank the instance id.
+    await user.clear(await screen.findByLabelText(/instance id/i));
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body).not.toHaveProperty("webhook");
+      expect(body).not.toHaveProperty("instanceId");
+      // Nothing else was edited either.
+      expect(body).toEqual({});
+    });
+  });
+
+  it("includes `webhook` when only the secret was edited (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+    });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config").webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "new-secret",
+      });
+    });
+  });
+
+  it("any completed config refetch discards an in-flight Test (a secret-only rotation is invisible in the redacted response)", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    const config = makeConfig({ webhook: { url: "https://hook.example", enabled: true, secretConfigured: true } });
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) return Promise.resolve(jsonResponse({ config }));
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    // Identical payload — the only thing that could have changed is the redacted secret.
+    resolveRefetch!(jsonResponse({ config }));
+    await new Promise((r) => setTimeout(r, 30));
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("Clear sends webhook.secret as an empty string so the server drops the stored secret", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await screen.findByLabelText(/signing secret/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/cleared/i),
+    );
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body.webhook).toEqual({ url: "https://hook.example", enabled: true, secret: "" });
+    });
+  });
+
+  // Copilot review on PR #19: Test must exercise the DRAFT secret, not the
+  // stored one, or it reports success against a receiver that can't verify
+  // the value about to be saved.
+  it("Test sends the draft secret so the receiver verifies the value about to be saved", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+
+    await user.type(await screen.findByLabelText(/signing secret/i), "draft-secret");
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config/test-webhook");
+      expect(body).toEqual({ url: "https://hook.example", secret: "draft-secret" });
+    });
+  });
+
+  it("Test sends the edited instance id draft, and omits it when the field is blank", async () => {
+    // Copilot review on PR #19 round 9: Test must stamp the instance id the
+    // user is about to save, not the previously stored one.
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true },
+        instanceId: "inst-old",
+      }),
+    });
+    renderWithProviders(<Settings />);
+    const instanceInput = await screen.findByLabelText(/instance id/i);
+    await user.clear(instanceInput);
+    await user.type(instanceInput, "  inst-draft  ");
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config/test-webhook")).toEqual({
+        url: "https://hook.example",
+        instanceId: "inst-draft",
+      });
+    });
+
+    await user.clear(instanceInput);
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      const calls = stub.fetch.mock.calls.filter(([i]) => String(i) === "/api/config/test-webhook");
+      expect(calls.length).toBe(2);
+      expect(JSON.parse(String((calls[1]![1] as RequestInit).body))).toEqual({
+        url: "https://hook.example",
+      });
+    });
+  });
+
+  it("Test omits the secret when the field is untouched (server signs with the stored one) and sends '' after Clear", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config/test-webhook")).toEqual({ url: "https://hook.example" });
+    });
+
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await waitFor(() => {
+      const calls = stub.fetch.mock.calls.filter(
+        ([i]) => String(i) === "/api/config/test-webhook",
+      );
+      expect(calls.length).toBe(2);
+      const body = JSON.parse(String((calls[1]![1] as RequestInit).body));
+      expect(body).toEqual({ url: "https://hook.example", secret: "" });
+    });
+  });
+
+  it("editing, generating, or clearing the secret discards a prior Test result (it no longer describes the draft)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({
+        webhook: { url: "https://hook.example", enabled: true, secretConfigured: true },
+      }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.click(screen.getByRole("button", { name: /generate/i }));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.type(screen.getByLabelText(/signing secret/i), "x");
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await screen.findByText(/connection success/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("ignores a Test response that arrives after the secret draft changed (in-flight result is stale)", async () => {
+    // Copilot review on PR #19 round 7: clearing testResult on edit doesn't
+    // stop a pending test() from calling setTestResult(r) for the OLD draft.
+    const user = userEvent.setup();
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+          }),
+        );
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i }));
+    await user.type(screen.getByLabelText(/signing secret/i), "changed");
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+
+    // Give the stale promise every chance to land, then assert it did not.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("a refetch landing mid-edit does not discard an in-progress secret draft (hydrate only when clean)", async () => {
+    // Copilot review on PR #19 round 12 (suppressed finding): the hydration
+    // effect ran on every cfg.data change, so a background refetch reset
+    // the secret draft to "" and the following Save silently kept the old
+    // secret.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let gets = 0;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({
+              config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+            }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config" && method === "POST") {
+        return Promise.resolve(jsonResponse({ config: makeConfig() }));
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    // Kick off a background refetch and edit while it is in flight.
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    await user.type(screen.getByLabelText(/signing secret/i), "draft-in-progress");
+    resolveRefetch!(
+      jsonResponse({
+        config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }),
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("draft-in-progress");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body.webhook).toEqual({
+        url: "https://hook.example",
+        enabled: true,
+        secret: "draft-in-progress",
+      });
+    });
+  });
+
+  it("disables the editable controls while a save is in flight so a late edit cannot be silently lost", async () => {
+    // Copilot review on PR #19 round 13 (suppressed finding): an edit made
+    // after clicking Save was neither saved nor kept — the post-save
+    // re-hydration discarded it.
+    const user = userEvent.setup();
+    let resolvePost: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        return Promise.resolve(
+          jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }) }),
+        );
+      }
+      if (url === "/api/config" && method === "POST") {
+        return new Promise<Response>((resolve) => {
+          resolvePost = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "s");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => expect(screen.getByLabelText(/signing secret/i)).toBeDisabled());
+    expect(screen.getByLabelText(/instance id/i)).toBeDisabled();
+    expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toBeDisabled();
+    expect(screen.getByRole("button", { name: /generate/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^test$/i })).toBeDisabled();
+
+    resolvePost(jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true, secretConfigured: true } }) }));
+    await waitFor(() => expect(screen.getByLabelText(/signing secret/i)).toBeEnabled());
+  });
+
+  it("a refetch that hydrates DIFFERENT server values discards an in-flight Test result (it described the old values)", async () => {
+    // Copilot review on PR #19 round 14 (suppressed finding): a clean form
+    // is re-hydrated from a background refetch, but a Test started against
+    // the previous URL/instance could still resolve and read as success for
+    // the new values.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true } }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await screen.findByLabelText(/signing secret/i);
+
+    await user.click(screen.getByRole("button", { name: /^test$/i })); // in flight against old.example
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://new.example", enabled: true } }) }),
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://new.example"),
+    );
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+
+  it("sends only the fields the user edited — an untouched instance id is never re-posted", async () => {
+    // Copilot review on PR #19 round 19: instanceId rode along on every
+    // save, so a value changed elsewhere could be overwritten by this
+    // page's stale copy on an unrelated (poll/Jira) save.
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, {
+      config: makeConfig({ webhook: null, instanceId: "inst-server", pollIntervalMinutes: 10 }),
+    });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/instance id/i);
+    fireEvent.change(screen.getByRole("slider"), { target: { value: "15" } });
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body).toEqual({ pollIntervalMinutes: 15 });
+    });
+  });
+
+  it("a refetch re-hydrates UNTOUCHED fields while an edited field keeps its draft (no stale URL saved with a new secret)", async () => {
+    // Copilot review on PR #19 round 19: with a page-wide dirty gate, editing
+    // only the secret left the URL stale after a refetch, and Save combined
+    // the stale URL with the new secret.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true }, instanceId: "inst-old" }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config" && method === "POST") return Promise.resolve(jsonResponse({ config: makeConfig() }));
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    resolveRefetch!(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://new.example", enabled: true }, instanceId: "inst-new" }) }),
+    );
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://new.example"),
+    );
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-new");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("new-secret");
+
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      const body = findPost("/api/config");
+      expect(body).toEqual({
+        webhook: { url: "https://new.example", enabled: true, secret: "new-secret" },
+      });
+    });
+  });
+
+  it("shows a placeholder when the server has not minted an instance id yet", async () => {
+    routeSettingsFetch(stub, { config: makeConfig({ instanceId: null }) });
+    renderWithProviders(<Settings />);
+    expect(await screen.findByLabelText(/instance id/i)).toHaveValue("");
+    expect(screen.getByLabelText(/instance id/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/generated/i),
+    );
+  });
+});
+
+describe("Settings — Save/Test gated on a settled, refetch-free config query", () => {
+  // Copilot review on PR #19 (suppressed finding): React Query keeps the last
+  // good config while a refetch is in flight or after one fails, so the page
+  // still renders and Save/Test stayed enabled against possibly-stale values —
+  // a secret-only Save would re-post the cached webhook URL, and Test would
+  // send the cached instance id. WebhookStep already gates both controls on
+  // `cfg.isSuccess && !cfg.isFetching`; Settings mirrors it.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  // First GET resolves with a stored webhook + instance id; the second GET is
+  // handed back to the test so it can be held in flight or failed on demand.
+  function routeWithHeldRefetch(): { resolveRefetch: () => (value: Response) => void } {
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://stored.example", enabled: true }, instanceId: "inst-stored" }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    return {
+      resolveRefetch: () => {
+        expect(resolveRefetch).not.toBeNull();
+        return resolveRefetch!;
+      },
+    };
+  }
+
+  it("disables Save and Test while a config refetch is in flight, and re-enables them once it lands", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    const held = routeWithHeldRefetch();
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    const saveBtn = screen.getByRole("button", { name: /save settings/i });
+    const testBtn = screen.getByRole("button", { name: /^test$/i });
+    expect(saveBtn).not.toBeDisabled();
+    expect(testBtn).not.toBeDisabled();
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(saveBtn).toBeDisabled());
+    expect(testBtn).toBeDisabled();
+
+    held.resolveRefetch()(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://stored.example", enabled: true }, instanceId: "inst-stored" }) }),
+    );
+    await waitFor(() => expect(saveBtn).not.toBeDisabled());
+    expect(testBtn).not.toBeDisabled();
+    // The draft survived the refetch — the gate only holds the click, it
+    // does not discard the edit.
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("new-secret");
+  });
+
+  it("keeps Save and Test disabled when a refetch fails and the cached config is still shown", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    const held = routeWithHeldRefetch();
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    const saveBtn = screen.getByRole("button", { name: /save settings/i });
+    const testBtn = screen.getByRole("button", { name: /^test$/i });
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(saveBtn).toBeDisabled());
+    held.resolveRefetch()(
+      new Response(JSON.stringify({ error: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    // The query settles into its error state but keeps the cached data, so
+    // the form still renders the stored values rather than "failed to load"…
+    expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://stored.example");
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-stored");
+    // …and that is exactly why both controls must stay disabled: the values
+    // they would send may no longer match the server.
+    expect(saveBtn).toBeDisabled();
+    expect(testBtn).toBeDisabled();
+    expect(stub.fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toBe(false);
+  });
+});
+
+describe("Settings — a secret-only edit preserves the stored `enabled` flag", () => {
+  // Copilot review on PR #19 (suppressed finding): Save wrote `enabled: true`
+  // whenever a URL was present, so rotating or clearing the secret on a
+  // stored `{ url, enabled: false }` webhook silently started deliveries.
+  // The server defaults an OMITTED `enabled` to `url.length > 0`, so the
+  // stored value has to be echoed back explicitly; only an explicit URL edit
+  // is a "turn it on" gesture.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  function findPost(url: string): Record<string, unknown> {
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === url && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(postCall).toBeDefined();
+    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  const disabledWebhook = (): AppConfig =>
+    makeConfig({ webhook: { url: "https://stored.example", enabled: false, secretConfigured: true } });
+
+  it("keeps enabled=false when only the secret is rotated (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "rotated");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://stored.example", enabled: false, secret: "rotated" },
+      });
+    });
+  });
+
+  it("keeps enabled=false when only the secret is cleared (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://stored.example", enabled: false, secret: "" },
+      });
+    });
+  });
+
+  it("sends enabled=true when the URL itself is edited, even if the stored webhook was disabled", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    const urlInput = await screen.findByPlaceholderText(/api\.yourdomain\.com/i);
+    await waitFor(() => expect(urlInput).toHaveValue("https://stored.example"));
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://new.example");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://new.example", enabled: true },
+      });
+    });
+  });
+});
+
+describe("Settings — config refresh lifecycle (post-save refetch failure, refetch-start invalidation)", () => {
+  // Copilot review on PR #19 round 22 (suppressed findings).
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  const failedResponse = (): Response =>
+    new Response(JSON.stringify({ error: "boom" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("keeps the just-saved values on screen when the post-save refetch fails (cache seeded from the POST response)", async () => {
+    // Without seeding, a failed refetch leaves the OLD config cached, and
+    // clearing `touched` re-hydrates the form from it — the URL and secret
+    // the user just saved vanish until a reload, even though the server has
+    // them.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true } }) }),
+          );
+        }
+        return Promise.resolve(failedResponse());
+      }
+      if (url === "/api/config" && method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({
+              webhook: { url: "https://new.example", enabled: true, secretConfigured: true },
+            }),
+          }),
+        );
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    const urlInput = await screen.findByPlaceholderText(/api\.yourdomain\.com/i);
+    await waitFor(() => expect(urlInput).toHaveValue("https://old.example"));
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://new.example");
+    await user.type(screen.getByLabelText(/signing secret/i), "fresh-secret");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    // The refetch failed (footer explains why Save is disabled)…
+    expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+    // …but the form still shows what was saved, not the pre-save cache.
+    expect(urlInput).toHaveValue("https://new.example");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/configured — leave blank to keep/i),
+    );
+  });
+
+  it("a config refetch that STARTS while a Test is in flight discards the Test result, even when that refetch then fails", async () => {
+    // `dataUpdatedAt` only moves on a successful refetch, so a test that was
+    // already running when a refetch began could land a "success" against
+    // config that was being replaced — and if the refetch then errored,
+    // nothing ever cleared it.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    const testBtn = await screen.findByRole("button", { name: /^test$/i });
+    await waitFor(() => expect(testBtn).toBeEnabled());
+    await user.click(testBtn);
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    // Refetch is in flight; the test resolves NOW, before any refetch outcome.
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    // And a failed refetch outcome cannot resurrect it either.
+    resolveRefetch!(failedResponse());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
   });
 });
