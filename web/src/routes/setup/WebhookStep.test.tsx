@@ -981,3 +981,74 @@ describe("WebhookStep — signing secret + instance id", () => {
     });
   });
 });
+
+describe("WebhookStep — revisiting preserves the stored `enabled` flag", () => {
+  // Copilot review on PR #19 (suppressed finding): Next always wrote
+  // `enabled: true`, so revisiting the step with a stored `{ url, enabled:
+  // false }` webhook and only entering a secret started deliveries. The
+  // server defaults an OMITTED `enabled` to `url.length > 0`, so the stored
+  // value is echoed back for a hydrated (untouched) URL; a URL the user
+  // typed is an explicit "turn it on".
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  function postedWebhook(): unknown {
+    const post = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === "/api/config" && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(post).toBeDefined();
+    return (JSON.parse(String((post?.[1] as RequestInit).body)) as { webhook: unknown }).webhook;
+  }
+
+  const disabledConfig = (): AppConfig =>
+    appConfigFactory
+      .authenticated()
+      .withWebhook({ url: "https://stored.example/ingest", enabled: false, secretConfigured: false })
+      .build();
+
+  it("entering only a secret on a hydrated URL keeps enabled=false", async () => {
+    const user = userEvent.setup();
+    const onNext = vi.fn();
+    routeWebhookFetch(stub, { config: disabledConfig() });
+    renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />);
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue(
+        "https://stored.example/ingest",
+      ),
+    );
+    await user.type(screen.getByLabelText(/signing secret/i), "whsec_new");
+    const next = screen.getByRole("button", { name: /^next$/i });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+
+    await waitFor(() =>
+      expect(postedWebhook()).toEqual({
+        url: "https://stored.example/ingest",
+        enabled: false,
+        secret: "whsec_new",
+      }),
+    );
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+  });
+
+  it("typing a new URL sends enabled=true even though the stored webhook was disabled", async () => {
+    const user = userEvent.setup();
+    routeWebhookFetch(stub, { config: disabledConfig() });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />);
+    const urlInput = screen.getByPlaceholderText(/api\.yourdomain\.com/i);
+    await waitFor(() => expect(urlInput).toHaveValue("https://stored.example/ingest"));
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://new.example/ingest");
+    const next = screen.getByRole("button", { name: /^next$/i });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+
+    await waitFor(() =>
+      expect(postedWebhook()).toEqual({ url: "https://new.example/ingest", enabled: true }),
+    );
+  });
+});

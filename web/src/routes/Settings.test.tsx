@@ -1279,3 +1279,72 @@ describe("Settings — Save/Test gated on a settled, refetch-free config query",
     expect(stub.fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toBe(false);
   });
 });
+
+describe("Settings — a secret-only edit preserves the stored `enabled` flag", () => {
+  // Copilot review on PR #19 (suppressed finding): Save wrote `enabled: true`
+  // whenever a URL was present, so rotating or clearing the secret on a
+  // stored `{ url, enabled: false }` webhook silently started deliveries.
+  // The server defaults an OMITTED `enabled` to `url.length > 0`, so the
+  // stored value has to be echoed back explicitly; only an explicit URL edit
+  // is a "turn it on" gesture.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  function findPost(url: string): Record<string, unknown> {
+    const postCall = stub.fetch.mock.calls.find(
+      ([i, init]) =>
+        String(i) === url && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(postCall).toBeDefined();
+    return JSON.parse(String((postCall?.[1] as RequestInit).body)) as Record<string, unknown>;
+  }
+
+  const disabledWebhook = (): AppConfig =>
+    makeConfig({ webhook: { url: "https://stored.example", enabled: false, secretConfigured: true } });
+
+  it("keeps enabled=false when only the secret is rotated (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    await user.type(await screen.findByLabelText(/signing secret/i), "rotated");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://stored.example", enabled: false, secret: "rotated" },
+      });
+    });
+  });
+
+  it("keeps enabled=false when only the secret is cleared (URL untouched)", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    await screen.findByLabelText(/signing secret/i);
+    await user.click(screen.getByRole("button", { name: /^clear$/i }));
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://stored.example", enabled: false, secret: "" },
+      });
+    });
+  });
+
+  it("sends enabled=true when the URL itself is edited, even if the stored webhook was disabled", async () => {
+    const user = userEvent.setup();
+    routeSettingsFetch(stub, { config: disabledWebhook() });
+    renderWithProviders(<Settings />);
+    const urlInput = await screen.findByPlaceholderText(/api\.yourdomain\.com/i);
+    await waitFor(() => expect(urlInput).toHaveValue("https://stored.example"));
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://new.example");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+    await waitFor(() => {
+      expect(findPost("/api/config")).toEqual({
+        webhook: { url: "https://new.example", enabled: true },
+      });
+    });
+  });
+});

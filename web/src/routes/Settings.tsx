@@ -140,7 +140,13 @@ export function Settings(): JSX.Element {
               webhook: webhookUrl.trim()
                 ? {
                     url: webhookUrl.trim(),
-                    enabled: true,
+                    // An edited URL is an explicit "turn it on"; an untouched
+                    // (hydrated) URL keeps the stored flag, so rotating or
+                    // clearing the secret cannot start deliveries on a
+                    // webhook that is stored disabled. Echoed explicitly
+                    // because the server defaults an omitted `enabled` to
+                    // "URL present".
+                    enabled: touched.webhookUrl ? true : (c.webhook?.enabled ?? true),
                     // Tri-state on the wire: omitted = keep stored, "" =
                     // clear, non-empty = replace.
                     ...(draftSecret() !== undefined ? { secret: draftSecret() } : {}),

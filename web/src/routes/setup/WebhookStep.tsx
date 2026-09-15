@@ -120,7 +120,12 @@ export function WebhookStep({
       await api.updateConfig({
         webhook: {
           url: url.trim(),
-          enabled: true,
+          // A typed URL is an explicit "turn it on"; a hydrated (untouched)
+          // URL keeps the stored flag, so revisiting the step to add a
+          // secret cannot start deliveries on a webhook stored disabled.
+          // Echoed explicitly because the server defaults an omitted
+          // `enabled` to "URL present".
+          enabled: urlTouched.current ? true : (cfg.data?.config.webhook?.enabled ?? true),
           ...(trimmedSecret ? { secret: trimmedSecret } : {}),
         },
       });
