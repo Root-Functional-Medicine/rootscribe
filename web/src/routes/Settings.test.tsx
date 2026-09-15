@@ -1180,3 +1180,102 @@ describe("Settings — webhook signing secret + instance id", () => {
     );
   });
 });
+
+describe("Settings — Save/Test gated on a settled, refetch-free config query", () => {
+  // Copilot review on PR #19 (suppressed finding): React Query keeps the last
+  // good config while a refetch is in flight or after one fails, so the page
+  // still renders and Save/Test stayed enabled against possibly-stale values —
+  // a secret-only Save would re-post the cached webhook URL, and Test would
+  // send the cached instance id. WebhookStep already gates both controls on
+  // `cfg.isSuccess && !cfg.isFetching`; Settings mirrors it.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  // First GET resolves with a stored webhook + instance id; the second GET is
+  // handed back to the test so it can be held in flight or failed on demand.
+  function routeWithHeldRefetch(): { resolveRefetch: () => (value: Response) => void } {
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://stored.example", enabled: true }, instanceId: "inst-stored" }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    return {
+      resolveRefetch: () => {
+        expect(resolveRefetch).not.toBeNull();
+        return resolveRefetch!;
+      },
+    };
+  }
+
+  it("disables Save and Test while a config refetch is in flight, and re-enables them once it lands", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    const held = routeWithHeldRefetch();
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    const saveBtn = screen.getByRole("button", { name: /save settings/i });
+    const testBtn = screen.getByRole("button", { name: /^test$/i });
+    expect(saveBtn).not.toBeDisabled();
+    expect(testBtn).not.toBeDisabled();
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(saveBtn).toBeDisabled());
+    expect(testBtn).toBeDisabled();
+
+    held.resolveRefetch()(
+      jsonResponse({ config: makeConfig({ webhook: { url: "https://stored.example", enabled: true }, instanceId: "inst-stored" }) }),
+    );
+    await waitFor(() => expect(saveBtn).not.toBeDisabled());
+    expect(testBtn).not.toBeDisabled();
+    // The draft survived the refetch — the gate only holds the click, it
+    // does not discard the edit.
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("new-secret");
+  });
+
+  it("keeps Save and Test disabled when a refetch fails and the cached config is still shown", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    const held = routeWithHeldRefetch();
+    renderWithProviders(<Settings />, { queryClient: qc });
+    await user.type(await screen.findByLabelText(/signing secret/i), "new-secret");
+    const saveBtn = screen.getByRole("button", { name: /save settings/i });
+    const testBtn = screen.getByRole("button", { name: /^test$/i });
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(saveBtn).toBeDisabled());
+    held.resolveRefetch()(
+      new Response(JSON.stringify({ error: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    // The query settles into its error state but keeps the cached data, so
+    // the form still renders the stored values rather than "failed to load"…
+    expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://stored.example");
+    expect(screen.getByLabelText(/instance id/i)).toHaveValue("inst-stored");
+    // …and that is exactly why both controls must stay disabled: the values
+    // they would send may no longer match the server.
+    expect(saveBtn).toBeDisabled();
+    expect(testBtn).toBeDisabled();
+    expect(stub.fetch.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === "POST")).toBe(false);
+  });
+});

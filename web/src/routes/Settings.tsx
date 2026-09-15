@@ -109,6 +109,15 @@ export function Settings(): JSX.Element {
   const c = cfg.data?.config;
   if (!c) return <p>failed to load</p>;
 
+  // React Query keeps the last good config while a refetch is in flight or
+  // after one fails, so `c` is still defined and the form still renders —
+  // but the untouched fields it hydrated may no longer match the server.
+  // A secret-only Save would re-post that cached webhook URL (resurrecting
+  // or rewiring a webhook another client removed or changed) and a Test
+  // would send the cached instance id, so both wait for a successfully
+  // settled, refetch-free query — the same gate WebhookStep uses.
+  const configSettled = cfg.isSuccess && !cfg.isFetching;
+
   // While `saving` is true every editable control is disabled: the POST
   // captures the draft at click time and the post-save re-hydration would
   // otherwise silently discard an edit made during the request.
@@ -306,7 +315,7 @@ export function Settings(): JSX.Element {
             <button
               className="btn-primary px-6 py-3"
               onClick={() => void test()}
-              disabled={!webhookUrl || saving}
+              disabled={!webhookUrl || saving || !configSettled}
             >
               Test
             </button>
@@ -527,10 +536,15 @@ export function Settings(): JSX.Element {
         <button
           className="w-full max-w-md btn-primary py-4 text-base font-black shadow-lg shadow-primary/10"
           onClick={() => void save()}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || !configSettled}
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>
+        {cfg.isError && (
+          <p className="mt-3 text-xs text-error max-w-md text-center">
+            Could not refresh the current settings — reload the page before saving or testing.
+          </p>
+        )}
         {saveError && (
           <p className="mt-3 text-xs text-error max-w-md text-center">{saveError}</p>
         )}
