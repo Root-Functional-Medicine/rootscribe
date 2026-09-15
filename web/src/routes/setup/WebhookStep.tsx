@@ -37,12 +37,15 @@ export function WebhookStep({
     if (!cfg.data || urlTouched.current) return;
     setUrl(cfg.data.config.webhook?.url ?? "");
   }, [cfg.data]);
-  // Every completed refetch may reflect a config change another client made
-  // — including a secret rotation, which is invisible in the redacted
-  // response — so an in-flight Test Connection can no longer be trusted.
+  // Any config refresh invalidates the Test Connection — the moment it
+  // STARTS (a test already in flight would otherwise land a result against
+  // state being replaced, and a refetch that then errors never moves
+  // `dataUpdatedAt`) and again when data lands. A refetch may reflect a
+  // change another client made, including a secret rotation invisible in
+  // the redacted response.
   useEffect(() => {
-    if (cfg.dataUpdatedAt) invalidateTest();
-  }, [cfg.dataUpdatedAt]);
+    if (cfg.isFetching || cfg.dataUpdatedAt) invalidateTest();
+  }, [cfg.isFetching, cfg.dataUpdatedAt]);
   // The config query failed and the user has not touched the URL: the
   // field may show stale cached data. Saving that URL together with a typed
   // secret could resurrect a webhook the server removed or changed, so the

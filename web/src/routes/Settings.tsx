@@ -96,14 +96,17 @@ export function Settings(): JSX.Element {
     if (!touched.jira) setJiraBaseUrl(c.jiraBaseUrl ?? "");
   }, [cfg.data, touched]);
 
-  // Every completed refetch may reflect a config change another client made
-  // — including a secret rotation, which is invisible in the redacted
-  // response, and a URL/instance id that just re-hydrated above — so an
-  // in-flight Test can no longer be trusted.
+  // Any config refresh invalidates the Test — the moment it STARTS (a test
+  // already in flight would otherwise land a result against state that is
+  // being replaced, and a refetch that then errors never moves
+  // `dataUpdatedAt`) and again when data lands (a seeded cache updates
+  // without fetching). Both matter: a refetch may reflect a change another
+  // client made, including a secret rotation invisible in the redacted
+  // response.
   useEffect(() => {
-    if (cfg.dataUpdatedAt) invalidateTest();
+    if (cfg.isFetching || cfg.dataUpdatedAt) invalidateTest();
     // invalidateTest is stable in effect (bumps a ref, clears state).
-  }, [cfg.dataUpdatedAt]);
+  }, [cfg.isFetching, cfg.dataUpdatedAt]);
 
   if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   const c = cfg.data?.config;
@@ -134,7 +137,7 @@ export function Settings(): JSX.Element {
       // empty values, and "leave it alone" is the only sensible reading of a
       // cleared field for an identifier the server minted.
       const trimmedInstanceId = instanceId.trim();
-      await api.updateConfig({
+      const saved = await api.updateConfig({
         ...(touched.webhookUrl || touched.secret
           ? {
               webhook: webhookUrl.trim()
@@ -158,8 +161,14 @@ export function Settings(): JSX.Element {
         ...(touched.jira ? { jiraBaseUrl: trimmedJira } : {}),
         ...(touched.instanceId && trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
       });
-      await qc.invalidateQueries({ queryKey: ["config"] });
+      // Seed the cache from the POST response BEFORE clearing the drafts:
+      // the hydration effect re-hydrates every untouched field from
+      // `cfg.data`, and if the follow-up refetch fails React Query keeps
+      // whatever is cached — without the seed that is the PRE-save config,
+      // and the values the user just saved would vanish until a reload.
+      qc.setQueryData(["config"], saved);
       setTouched(NOTHING_TOUCHED);
+      await qc.invalidateQueries({ queryKey: ["config"] });
     } catch (err) {
       // Surface server validation errors (e.g. bad Jira URL) inline — without
       // this, the promise rejection would vanish and the user would see no

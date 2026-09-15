@@ -1348,3 +1348,119 @@ describe("Settings — a secret-only edit preserves the stored `enabled` flag", 
     });
   });
 });
+
+describe("Settings — config refresh lifecycle (post-save refetch failure, refetch-start invalidation)", () => {
+  // Copilot review on PR #19 round 22 (suppressed findings).
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  const failedResponse = (): Response =>
+    new Response(JSON.stringify({ error: "boom" }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    });
+
+  it("keeps the just-saved values on screen when the post-save refetch fails (cache seeded from the POST response)", async () => {
+    // Without seeding, a failed refetch leaves the OLD config cached, and
+    // clearing `touched` re-hydrates the form from it — the URL and secret
+    // the user just saved vanish until a reload, even though the server has
+    // them.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://old.example", enabled: true } }) }),
+          );
+        }
+        return Promise.resolve(failedResponse());
+      }
+      if (url === "/api/config" && method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            config: makeConfig({
+              webhook: { url: "https://new.example", enabled: true, secretConfigured: true },
+            }),
+          }),
+        );
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    const urlInput = await screen.findByPlaceholderText(/api\.yourdomain\.com/i);
+    await waitFor(() => expect(urlInput).toHaveValue("https://old.example"));
+    await user.clear(urlInput);
+    await user.type(urlInput, "https://new.example");
+    await user.type(screen.getByLabelText(/signing secret/i), "fresh-secret");
+    await user.click(screen.getByRole("button", { name: /save settings/i }));
+
+    // The refetch failed (footer explains why Save is disabled)…
+    expect(await screen.findByText(/could not refresh/i)).toBeInTheDocument();
+    // …but the form still shows what was saved, not the pre-save cache.
+    expect(urlInput).toHaveValue("https://new.example");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveValue("");
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/configured — leave blank to keep/i),
+    );
+  });
+
+  it("a config refetch that STARTS while a Test is in flight discards the Test result, even when that refetch then fails", async () => {
+    // `dataUpdatedAt` only moves on a successful refetch, so a test that was
+    // already running when a refetch began could land a "success" against
+    // config that was being replaced — and if the refetch then errored,
+    // nothing ever cleared it.
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = (init?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(
+            jsonResponse({ config: makeConfig({ webhook: { url: "https://hook.example", enabled: true } }) }),
+          );
+        }
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url === "/api/config/test-webhook") {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      if (url === "/api/sync/status") return Promise.resolve(jsonResponse(syncStatus()));
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<Settings />, { queryClient: qc });
+    const testBtn = await screen.findByRole("button", { name: /^test$/i });
+    await waitFor(() => expect(testBtn).toBeEnabled());
+    await user.click(testBtn);
+
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    // Refetch is in flight; the test resolves NOW, before any refetch outcome.
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    // And a failed refetch outcome cannot resurrect it either.
+    resolveRefetch!(failedResponse());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+});

@@ -1052,3 +1052,65 @@ describe("WebhookStep — revisiting preserves the stored `enabled` flag", () =>
     );
   });
 });
+
+describe("WebhookStep — a refetch that starts mid-test discards the result", () => {
+  // Copilot review on PR #19 round 22 (suppressed finding): `dataUpdatedAt`
+  // only moves on a successful refetch, so a Test Connection already in
+  // flight when a refetch began could land "success" against config being
+  // replaced — and if the refetch errored, nothing cleared it.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  it("discards an in-flight Test Connection when a config refetch STARTS, even if that refetch then fails", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    let resolveRefetch: ((value: Response) => void) | null = null;
+    let resolveTest: (value: Response) => void = () => undefined;
+    const config = appConfigFactory
+      .authenticated()
+      .withWebhook({ url: "https://hook.example", enabled: true, secretConfigured: true })
+      .build();
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) return Promise.resolve(jsonResponse({ config }));
+        return new Promise<Response>((resolve) => {
+          resolveRefetch = resolve;
+        });
+      }
+      if (url.includes("/api/config/test-webhook")) {
+        return new Promise<Response>((resolve) => {
+          resolveTest = resolve;
+        });
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://hook.example"),
+    );
+
+    await clickTestConnection(user);
+    void qc.invalidateQueries({ queryKey: ["config"] });
+    await waitFor(() => expect(resolveRefetch).not.toBeNull());
+    // Refetch in flight; the test lands before any refetch outcome.
+    resolveTest(jsonResponse({ ok: true, statusCode: 200, bodySnippet: "pong", durationMs: 1 }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+
+    resolveRefetch!(
+      new Response(JSON.stringify({ error: "boom" }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
+  });
+});
