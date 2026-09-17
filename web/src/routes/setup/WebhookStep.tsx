@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import type { ConfigResponse } from "@rootscribe/shared";
 import { api } from "../../api.js";
 import { generateWebhookSecret } from "../../lib/webhookSecret.js";
 
@@ -110,17 +111,18 @@ export function WebhookStep({
   };
 
   const persistDraft = async (): Promise<void> => {
+    let saved: ConfigResponse | undefined;
     if (url.trim() === "") {
       // A blank URL means "no webhook" only when we KNOW that is the stored
       // state (config loaded) or the user deliberately cleared it. If the
       // config query failed we cannot tell whether a webhook + secret is
       // stored, so leave it untouched rather than post webhook=null.
       if (cfg.isSuccess || urlTouched.current) {
-        await api.updateConfig({ webhook: null });
+        saved = await api.updateConfig({ webhook: null });
       }
     } else {
       const trimmedSecret = secret.trim();
-      await api.updateConfig({
+      saved = await api.updateConfig({
         webhook: {
           url: url.trim(),
           // A typed URL is an explicit "turn it on"; a hydrated (untouched)
@@ -133,6 +135,12 @@ export function WebhookStep({
         },
       });
     }
+    // Seed the cache from the POST response BEFORE invalidating, as Settings
+    // does: if the follow-up refetch fails React Query keeps whatever is
+    // cached, and without the seed that is the PRE-save config (webhook:
+    // null) — Back would then remount this step showing Skip and post null
+    // over the webhook the server has just stored.
+    if (saved) qc.setQueryData(["config"], saved);
     // The app keeps ['config'] fresh for 5s. Without this, Next -> Back
     // would remount the step from the stale cache (webhook: null), show
     // Skip, and post null over the webhook we just saved.

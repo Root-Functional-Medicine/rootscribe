@@ -1114,3 +1114,75 @@ describe("WebhookStep — a refetch that starts mid-test discards the result", (
     expect(screen.queryByText(/connection success/i)).not.toBeInTheDocument();
   });
 });
+
+describe("WebhookStep — post-save refetch failure (cache seeded from the POST response)", () => {
+  // Copilot review on PR #19 round 24 (suppressed finding): `Settings` seeds
+  // ['config'] from the POST response before invalidating; the wizard did
+  // not. If the follow-up GET fails, React Query keeps whatever is cached —
+  // without the seed that is the PRE-save config (webhook: null), so Back
+  // remounts this step showing Skip over a webhook the server has stored.
+  let stub: ReturnType<typeof stubFetch>;
+  beforeEach(() => {
+    stub = stubFetch();
+  });
+  afterEach(() => stub.cleanup());
+
+  it("keeps the just-saved webhook on a revisit when the post-save refetch fails", async () => {
+    const user = userEvent.setup();
+    const qc = createTestQueryClient();
+    let gets = 0;
+    stub.fetch.mockImplementation((input, init) => {
+      const url = typeof input === "string" ? input : String(input);
+      const method = ((init as RequestInit | undefined)?.method ?? "GET").toUpperCase();
+      if (url === "/api/config" && method === "GET") {
+        gets += 1;
+        if (gets === 1) {
+          return Promise.resolve(jsonResponse({ config: appConfigFactory.authenticated().build() }));
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ error: "boom" }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      }
+      if (url === "/api/config" && method === "POST") {
+        return Promise.resolve(
+          jsonResponse({
+            config: appConfigFactory
+              .authenticated()
+              .withWebhook({ url: "https://hook.example", enabled: true, secretConfigured: true })
+              .build(),
+          }),
+        );
+      }
+      return Promise.resolve(jsonResponse({}));
+    });
+    const onNext = vi.fn();
+    const view = renderWithProviders(<WebhookStep onNext={onNext} onBack={vi.fn()} />, { queryClient: qc });
+    await screen.findByText(/instance id/i);
+    await user.type(screen.getByPlaceholderText(/api\.yourdomain\.com/i), "https://hook.example");
+    await user.type(screen.getByLabelText(/signing secret/i), "fresh-secret");
+    await waitFor(() => expect(screen.getByRole("button", { name: /^next$/i })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: /^next$/i }));
+    await waitFor(() => expect(onNext).toHaveBeenCalledTimes(1));
+    // The post-save refetch has failed by now (GET #2 returns 500).
+    await waitFor(() => expect(gets).toBeGreaterThanOrEqual(2));
+
+    // Back: the parent remounts the step against the same cache; the
+    // refetch on remount fails too, so whatever is cached is what shows.
+    view.unmount();
+    renderWithProviders(<WebhookStep onNext={vi.fn()} onBack={vi.fn()} />, { queryClient: qc });
+    await waitFor(() =>
+      expect(screen.getByPlaceholderText(/api\.yourdomain\.com/i)).toHaveValue("https://hook.example"),
+    );
+    expect(screen.getByRole("button", { name: /^next$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^skip$/i })).not.toBeInTheDocument();
+    // The remount's refetch failed, so the field reports that state (and
+    // still promises to keep the stored secret) rather than "unsigned".
+    expect(screen.getByLabelText(/signing secret/i)).toHaveAttribute(
+      "placeholder",
+      expect.stringMatching(/leave blank to keep any stored secret/i),
+    );
+  });
+});
