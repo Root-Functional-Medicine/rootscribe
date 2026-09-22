@@ -154,7 +154,13 @@ export async function fireWebhookForRecording(
   row: RecordingRow,
 ): Promise<boolean> {
   const cfg = loadConfig();
-  if (!cfg.webhook || !cfg.webhook.enabled || !cfg.webhook.url) return false;
+  // loadConfig() only type-asserts settings.json, so `enabled` can hold any
+  // shape. Test it as `!== true` rather than for falsiness: a hand-edited
+  // `"enabled": "false"` is a truthy string and would otherwise fire the very
+  // deliveries the user meant to disable. redactForClient() in
+  // routes/config.ts applies the identical `=== true` rule so the UI and this
+  // gate agree on every stored shape.
+  if (!cfg.webhook || cfg.webhook.enabled !== true || !cfg.webhook.url) return false;
   const payload = buildPayload(event, row);
   return fireRaw(cfg.webhook.url, payload, row.id, event);
 }

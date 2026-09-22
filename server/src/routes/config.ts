@@ -32,6 +32,13 @@ function redactForClient(cfg: AppConfig): AppConfigResponse {
   // Same rule as the delivery path's usableSecret(): only a non-empty STRING
   // signs, so only that counts as "configured" — a hand-edited non-string
   // must not make Settings claim verification is active.
+  //
+  // `enabled` follows the same shape-over-coercion rule for the same reason:
+  // only a real `true` counts. Boolean("false") is true, so a hand-edited
+  // `"enabled": "false"` would otherwise read as enabled. The delivery gate
+  // in webhook/post.ts fireWebhookForRecording() applies the identical
+  // `=== true` test, so what Settings displays and what actually fires can
+  // never disagree — change one and you must change the other.
   // Beyond "is an object", the URL must be a string: a hand-edited
   // `{ url: 123 }` would otherwise reach the UI, whose hydration calls
   // url.trim() and throws before the user can repair the config. Anything
@@ -41,7 +48,7 @@ function redactForClient(cfg: AppConfig): AppConfigResponse {
     isPlainObject(cfg.webhook) && typeof cfg.webhook["url"] === "string"
       ? (({ secret: storedSecret, url, enabled }) => ({
           url,
-          enabled: Boolean(enabled),
+          enabled: enabled === true,
           secretConfigured: typeof storedSecret === "string" && storedSecret.length > 0,
         }))(cfg.webhook as AppConfig["webhook"] & object)
       : null;

@@ -106,6 +106,32 @@ describe("fireWebhookForRecording — guard clauses", () => {
     expect(ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it("returns false for a hand-edited non-boolean enabled (only a real `true` fires)", async () => {
+    // Copilot review on PR #19 round 25. `!cfg.webhook.enabled` let any
+    // truthy non-boolean through — notably the string "false" from a
+    // hand-edited settings.json, which fired deliveries the user plainly
+    // meant to disable. redactForClient() applies the SAME `=== true` rule,
+    // so the gate and what Settings displays agree on every stored shape;
+    // tightening one alone would make the UI claim "disabled" while
+    // deliveries kept firing.
+    for (const enabled of ["false", "true", 1, {}]) {
+      updateConfig({
+        webhook: { url: "https://hook.example", enabled: enabled as unknown as boolean },
+        recordingsDir,
+      });
+      // Resolve a real 200 rather than a bare vi.fn(): if the gate ever
+      // regresses, the delivery short-circuits on the first attempt and this
+      // fails on the assertion below. A bare mock returns undefined, which
+      // sends the retry/backoff path into real timers and turns a regression
+      // into a 10s timeout instead of a readable failure.
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const ok = await fireWebhookForRecording("audio_ready", makeRow());
+      expect(ok).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  });
 });
 
 describe("fireWebhookForRecording — payload construction", () => {

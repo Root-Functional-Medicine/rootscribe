@@ -179,6 +179,25 @@ describe("POST /api/config (validation)", () => {
     expect(get.body.config.webhook).not.toHaveProperty("secret");
   });
 
+  it("reports enabled=false for a hand-edited non-boolean enabled (only a real `true` is enabled)", async () => {
+    // Copilot review on PR #19 round 25: `Boolean(enabled)` reported any
+    // truthy non-boolean as enabled — the string "false" being the case a
+    // user would be most surprised by. The delivery gate
+    // (fireWebhookForRecording) applies the same `=== true` rule, so what
+    // Settings shows and what actually fires never disagree.
+    for (const enabled of ["false", "true", 1, {}]) {
+      updateConfig({
+        webhook: {
+          url: "https://hook.example.com/in",
+          enabled,
+        } as unknown as AppConfig["webhook"],
+      });
+      const get = await request(app).get("/api/config");
+      expect(get.status).toBe(200);
+      expect(get.body.config.webhook.enabled).toBe(false);
+    }
+  });
+
   it("returns webhook=null (never rest-spreads) when the stored webhook is not a plain object", async () => {
     // Copilot review on PR #19 round 7: a hand-edited string or array here
     // would be spread character-by-character / element-by-element into the
