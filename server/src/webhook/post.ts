@@ -1,13 +1,87 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { WebhookPayload, WebhookEvent, RecordingRow } from "@rootscribe/shared";
-import { loadConfig } from "../config.js";
+import { ensureInstanceId, loadConfig } from "../config.js";
 import { getDb } from "../db.js";
 import { logger } from "../logger.js";
 
 import { encodeFolderPath } from "../lib/url.js";
+import { signWebhook } from "./sign.js";
 
 const BACKOFF_MS = [5_000, 30_000, 120_000];
+
+// Advertised on every outbound delivery. Kept in lockstep with package.json
+// by the release checklist (see CHANGELOG); deriving it at build time is a
+// DEVX-314 follow-up.
+const USER_AGENT = "rootscribe/0.2.0";
+
+// Latches so each warning is logged once per process, not once per
+// delivery — a long-running install would otherwise spam the log on every
+// poll cycle.
+let warnedUnsigned = false;
+let warnedInvalidSecret = false;
+
+// loadConfig() trusts settings.json's shape, so a hand-edited
+// `"secret": 12345` (or an object) would reach createHmac(), throw inside
+// fireRaw's try, and retry the same broken delivery forever. Only a
+// non-empty string is a usable key; anything else is treated as "no secret"
+// with a one-time warning.
+function usableSecret(secret: unknown): string | undefined {
+  if (typeof secret === "string") return secret || undefined;
+  if (secret != null && !warnedInvalidSecret) {
+    warnedInvalidSecret = true;
+    logger.warn(
+      { type: typeof secret },
+      "persisted webhook secret is not a string — sending deliveries unsigned until it is fixed in Settings",
+    );
+  }
+  return undefined;
+}
+
+/**
+ * Headers for one outbound delivery attempt.
+ *
+ * - `x-rootscribe-instance` is always present so a shared receiver can tell
+ *   installs apart.
+ * - When a webhook secret is configured, `x-rootscribe-timestamp` and
+ *   `x-rootscribe-signature: t=<sec>,v1=<hex>` are added. The signature
+ *   covers the exact `body` string passed to fetch, and the timestamp is
+ *   computed per attempt so a retry after backoff still lands inside the
+ *   receiver's tolerance window.
+ * - Without a secret, the first delivery logs a one-time warning so the
+ *   operator knows receivers cannot verify origin.
+ *
+ * `secret` is the key to sign with — the persisted one for real deliveries,
+ * or a caller-supplied draft for test sends (so Settings can verify a value
+ * the user has typed but not yet saved). Empty/undefined/non-string means
+ * unsigned. `instanceId` likewise overrides the persisted instance id for
+ * test sends only; real deliveries always use ensureInstanceId().
+ */
+function deliveryHeaders(
+  event: WebhookEvent,
+  body: string,
+  rawSecret: unknown,
+  instanceId?: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "user-agent": USER_AGENT,
+    "x-rootscribe-event": event,
+    "x-rootscribe-instance": instanceId || ensureInstanceId(),
+  };
+  const secret = usableSecret(rawSecret);
+  if (secret) {
+    const timestampSec = Math.floor(Date.now() / 1000);
+    headers["x-rootscribe-timestamp"] = String(timestampSec);
+    headers["x-rootscribe-signature"] = `t=${timestampSec},v1=${signWebhook(secret, timestampSec, body)}`;
+  } else if (!warnedUnsigned) {
+    warnedUnsigned = true;
+    logger.warn(
+      "webhook deliveries are unsigned — set a webhook secret in Settings so receivers can verify origin",
+    );
+  }
+  return headers;
+}
 
 function readIfExists(absPath: string): string | null {
   try {
@@ -80,7 +154,13 @@ export async function fireWebhookForRecording(
   row: RecordingRow,
 ): Promise<boolean> {
   const cfg = loadConfig();
-  if (!cfg.webhook || !cfg.webhook.enabled || !cfg.webhook.url) return false;
+  // loadConfig() only type-asserts settings.json, so `enabled` can hold any
+  // shape. Test it as `!== true` rather than for falsiness: a hand-edited
+  // `"enabled": "false"` is a truthy string and would otherwise fire the very
+  // deliveries the user meant to disable. redactForClient() in
+  // routes/config.ts applies the identical `=== true` rule so the UI and this
+  // gate agree on every stored shape.
+  if (!cfg.webhook || cfg.webhook.enabled !== true || !cfg.webhook.url) return false;
   const payload = buildPayload(event, row);
   return fireRaw(cfg.webhook.url, payload, row.id, event);
 }
@@ -92,16 +172,23 @@ async function fireRaw(
   event: WebhookEvent,
 ): Promise<boolean> {
   const body = JSON.stringify(payload);
+  // Capture the signing key AND the instance id ONCE per delivery. A secret
+  // rotated in Settings during the 5s/30s backoff must not re-sign the
+  // retry with the new key — the receiver still expects the old one and a
+  // transient 503 would turn into a permanent rejection. Likewise an
+  // instance id changed mid-backoff must not re-stamp the retry: it is the
+  // SAME logical delivery, and a receiver keying dedup or attribution on
+  // (instance, event) would otherwise see the retry as a second install.
+  // The timestamp/signature are still recomputed per attempt inside
+  // deliveryHeaders().
+  const secret = loadConfig().webhook?.secret;
+  const instanceId = ensureInstanceId();
   for (let attempt = 0; attempt < BACKOFF_MS.length; attempt++) {
     const started = Date.now();
     try {
       const res = await fetch(url, {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "user-agent": "rootscribe/0.1.1",
-          "x-rootscribe-event": event,
-        },
+        headers: deliveryHeaders(event, body, secret, instanceId),
         body,
       });
       const text = (await res.text().catch(() => "")).slice(0, 500);
@@ -170,19 +257,29 @@ function buildTestPayload(): WebhookPayload & { test: true } {
   };
 }
 
-/** Test a webhook URL without retries, for UI validation. */
+/**
+ * Test a webhook URL without retries, for UI validation.
+ *
+ * `secret` overrides the persisted signing secret so the UI can exercise a
+ * draft value before it is saved: undefined = sign with whatever is stored,
+ * "" = send unsigned, non-empty = sign with that value. `instanceId` does
+ * the same for the `x-rootscribe-instance` header (undefined/"" = the
+ * persisted id), so a passing Test describes exactly the headers Save
+ * will produce. The route validates it as header-safe before it gets here.
+ */
 export async function testWebhook(
   url: string,
+  secret?: string,
+  instanceId?: string,
 ): Promise<{ ok: boolean; statusCode?: number; bodySnippet?: string; error?: string; durationMs: number }> {
   const started = Date.now();
   const body = JSON.stringify(buildTestPayload());
+  const signingSecret = secret ?? loadConfig().webhook?.secret;
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: {
-        "content-type": "application/json",
-        "user-agent": "rootscribe/0.1.1",
-        "x-rootscribe-event": "transcript_ready",
+        ...deliveryHeaders("transcript_ready", body, signingSecret, instanceId),
         "x-rootscribe-test": "1",
       },
       body,

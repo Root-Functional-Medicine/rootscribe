@@ -1,7 +1,24 @@
-import { useState, useEffect, type JSX } from "react";
+import { useState, useEffect, useRef, type JSX } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { DEFAULT_CONFIG } from "@rootscribe/shared";
 import { api } from "../api.js";
+import { generateWebhookSecret } from "../lib/webhookSecret.js";
+
+interface Touched {
+  webhookUrl: boolean;
+  secret: boolean;
+  instanceId: boolean;
+  poll: boolean;
+  jira: boolean;
+}
+
+const NOTHING_TOUCHED: Touched = {
+  webhookUrl: false,
+  secret: false,
+  instanceId: false,
+  poll: false,
+  jira: false,
+};
 
 function formatRelative(ts: number | null): string {
   if (!ts) return "never";
@@ -26,26 +43,87 @@ export function Settings(): JSX.Element {
   });
 
   const [webhookUrl, setWebhookUrl] = useState("");
+  // The server never returns the signing secret (GET /api/config redacts it
+  // and reports `secretConfigured`), so this is a write-only DRAFT: "" with
+  // clearSecret=false means "untouched — keep whatever is stored", a
+  // non-empty value replaces it, and clearSecret=true sends "" to drop it.
+  const [webhookSecret, setWebhookSecret] = useState("");
+  const [clearSecret, setClearSecret] = useState(false);
+  const [instanceId, setInstanceId] = useState("");
   const [pollMinutes, setPollMinutes] = useState(10);
   const [jiraBaseUrl, setJiraBaseUrl] = useState("");
-  const [dirty, setDirty] = useState(false);
+  // Per-field "the user edited this" tracking. It drives two things:
+  //  - hydration: a background refetch re-hydrates every UNTOUCHED field
+  //    from the server and leaves touched drafts alone, so a stale local
+  //    copy of one field is never saved alongside an edit to another;
+  //  - save: only touched fields are sent. The server keeps everything it
+  //    does not receive, so an unrelated save can never overwrite a value
+  //    another client changed (instance id, webhook, ...) with a stale copy.
+  // Cleared after a successful save, at which point the refetched data
+  // re-hydrates the whole form.
+  const [touched, setTouched] = useState<Touched>(NOTHING_TOUCHED);
+  const touch = (field: keyof Touched): void =>
+    setTouched((prev) => (prev[field] ? prev : { ...prev, [field]: true }));
+  const dirty = Object.values(touched).some(Boolean);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [testResult, setTestResult] = useState<null | { ok: boolean; message: string }>(null);
+  // Bumped whenever the URL or secret draft changes and on every Test click.
+  // A test() response is only applied if the generation it started with is
+  // still current — otherwise a slow response for the OLD draft would be
+  // presented as verification of the new one.
+  const testGeneration = useRef(0);
+  const invalidateTest = (): void => {
+    testGeneration.current += 1;
+    setTestResult(null);
+  };
 
+  // Hydrate every UNTOUCHED field from the server whenever config data
+  // arrives (initial load and background refetches). Touched drafts are
+  // left alone; the write-only secret draft is never hydrated at all (it is
+  // redacted server-side) and only resets when `touched` is cleared after a
+  // save. The `touched` dependency makes the post-save reset re-hydrate.
   useEffect(() => {
     if (!cfg.data) return;
     const c = cfg.data.config;
-    setWebhookUrl(c.webhook?.url ?? "");
-    setPollMinutes(c.pollIntervalMinutes);
-    setJiraBaseUrl(c.jiraBaseUrl ?? "");
-    setDirty(false);
-  }, [cfg.data]);
+    if (!touched.webhookUrl) setWebhookUrl(c.webhook?.url ?? "");
+    if (!touched.secret) {
+      setWebhookSecret("");
+      setClearSecret(false);
+    }
+    if (!touched.instanceId) setInstanceId(c.instanceId ?? "");
+    if (!touched.poll) setPollMinutes(c.pollIntervalMinutes);
+    if (!touched.jira) setJiraBaseUrl(c.jiraBaseUrl ?? "");
+  }, [cfg.data, touched]);
+
+  // Any config refresh invalidates the Test — the moment it STARTS (a test
+  // already in flight would otherwise land a result against state that is
+  // being replaced, and a refetch that then errors never moves
+  // `dataUpdatedAt`) and again when data lands (a seeded cache updates
+  // without fetching). Both matter: a refetch may reflect a change another
+  // client made, including a secret rotation invisible in the redacted
+  // response.
+  useEffect(() => {
+    if (cfg.isFetching || cfg.dataUpdatedAt) invalidateTest();
+    // invalidateTest is stable in effect (bumps a ref, clears state).
+  }, [cfg.isFetching, cfg.dataUpdatedAt]);
 
   if (cfg.isLoading) return <p className="text-on-surface-variant">loading…</p>;
   const c = cfg.data?.config;
   if (!c) return <p>failed to load</p>;
 
+  // React Query keeps the last good config while a refetch is in flight or
+  // after one fails, so `c` is still defined and the form still renders —
+  // but the untouched fields it hydrated may no longer match the server.
+  // A secret-only Save would re-post that cached webhook URL (resurrecting
+  // or rewiring a webhook another client removed or changed) and a Test
+  // would send the cached instance id, so both wait for a successfully
+  // settled, refetch-free query — the same gate WebhookStep uses.
+  const configSettled = cfg.isSuccess && !cfg.isFetching;
+
+  // While `saving` is true every editable control is disabled: the POST
+  // captures the draft at click time and the post-save re-hydration would
+  // otherwise silently discard an edit made during the request.
   const save = async (): Promise<void> => {
     setSaving(true);
     setSaveError(null);
@@ -55,15 +133,42 @@ export function Settings(): JSX.Element {
       // made "clear" look broken. Sending DEFAULT_CONFIG.jiraBaseUrl keeps
       // the field in a valid state while respecting the clear gesture.
       const trimmedJira = jiraBaseUrl.trim() || DEFAULT_CONFIG.jiraBaseUrl;
-      await api.updateConfig({
-        webhook: webhookUrl.trim()
-          ? { url: webhookUrl.trim(), enabled: true }
-          : null,
-        pollIntervalMinutes: pollMinutes,
-        jiraBaseUrl: trimmedJira,
+      // A blank instance id is omitted rather than sent: the server rejects
+      // empty values, and "leave it alone" is the only sensible reading of a
+      // cleared field for an identifier the server minted.
+      const trimmedInstanceId = instanceId.trim();
+      const saved = await api.updateConfig({
+        ...(touched.webhookUrl || touched.secret
+          ? {
+              webhook: webhookUrl.trim()
+                ? {
+                    url: webhookUrl.trim(),
+                    // An edited URL is an explicit "turn it on"; an untouched
+                    // (hydrated) URL keeps the stored flag, so rotating or
+                    // clearing the secret cannot start deliveries on a
+                    // webhook that is stored disabled. Echoed explicitly
+                    // because the server defaults an omitted `enabled` to
+                    // "URL present".
+                    enabled: touched.webhookUrl ? true : (c.webhook?.enabled ?? true),
+                    // Tri-state on the wire: omitted = keep stored, "" =
+                    // clear, non-empty = replace.
+                    ...(draftSecret() !== undefined ? { secret: draftSecret() } : {}),
+                  }
+                : null,
+            }
+          : {}),
+        ...(touched.poll ? { pollIntervalMinutes: pollMinutes } : {}),
+        ...(touched.jira ? { jiraBaseUrl: trimmedJira } : {}),
+        ...(touched.instanceId && trimmedInstanceId ? { instanceId: trimmedInstanceId } : {}),
       });
+      // Seed the cache from the POST response BEFORE clearing the drafts:
+      // the hydration effect re-hydrates every untouched field from
+      // `cfg.data`, and if the follow-up refetch fails React Query keeps
+      // whatever is cached — without the seed that is the PRE-save config,
+      // and the values the user just saved would vanish until a reload.
+      qc.setQueryData(["config"], saved);
+      setTouched(NOTHING_TOUCHED);
       await qc.invalidateQueries({ queryKey: ["config"] });
-      setDirty(false);
     } catch (err) {
       // Surface server validation errors (e.g. bad Jira URL) inline — without
       // this, the promise rejection would vanish and the user would see no
@@ -74,10 +179,26 @@ export function Settings(): JSX.Element {
     }
   };
 
+  // The secret value to send for save AND test: undefined = untouched (use
+  // the stored one), "" = cleared, otherwise the trimmed draft.
+  const draftSecret = (): string | undefined => {
+    if (clearSecret) return "";
+    const trimmed = webhookSecret.trim();
+    return trimmed ? trimmed : undefined;
+  };
+
   const test = async (): Promise<void> => {
-    setTestResult(null);
+    invalidateTest();
+    const generation = testGeneration.current;
     try {
-      const r = await api.testWebhook(webhookUrl.trim());
+      // Pass the draft so the test delivery is signed with the value the
+      // user is about to save, not the previously stored one.
+      const r = await api.testWebhook(
+        webhookUrl.trim(),
+        draftSecret(),
+        instanceId.trim() || undefined,
+      );
+      if (generation !== testGeneration.current) return; // draft changed mid-flight
       const snippet = r.bodySnippet?.slice(0, 400).trim();
       let message: string;
       if (r.error) {
@@ -88,12 +209,19 @@ export function Settings(): JSX.Element {
       }
       setTestResult({ ok: r.ok, message });
     } catch (err) {
+      if (generation !== testGeneration.current) return;
       setTestResult({ ok: false, message: err instanceof Error ? err.message : String(err) });
     }
   };
 
   const s = syncStatus.data;
   const isHealthy = s && !s.authRequired && !s.lastError;
+  const secretConfigured = Boolean(c.webhook?.secretConfigured);
+  const secretPlaceholder = clearSecret
+    ? "will be cleared on save"
+    : secretConfigured
+      ? "configured — leave blank to keep, or generate a new one to rotate"
+      : "leave blank to send unsigned";
 
   return (
     <div className="max-w-[48rem] mx-auto space-y-8">
@@ -189,10 +317,11 @@ export function Settings(): JSX.Element {
               type="url"
               placeholder="https://api.yourdomain.com/v1/ingest"
               value={webhookUrl}
+              disabled={saving}
               onChange={(e) => {
                 setWebhookUrl(e.target.value);
-                setDirty(true);
-                setTestResult(null);
+                touch("webhookUrl");
+                invalidateTest();
                 // Clear any prior save error so it doesn't linger after the
                 // user starts correcting the value that caused it.
                 setSaveError(null);
@@ -201,7 +330,7 @@ export function Settings(): JSX.Element {
             <button
               className="btn-primary px-6 py-3"
               onClick={() => void test()}
-              disabled={!webhookUrl}
+              disabled={!webhookUrl || saving || !configSettled}
             >
               Test
             </button>
@@ -236,6 +365,103 @@ export function Settings(): JSX.Element {
               </div>
             </div>
           )}
+
+          <div className="space-y-2">
+            <label
+              htmlFor="webhook-secret"
+              className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider"
+            >
+              Signing Secret
+            </label>
+            <div className="flex gap-3">
+              <input
+                id="webhook-secret"
+                className="input py-3 border-transparent font-mono text-sm"
+                type="text"
+                autoComplete="off"
+                spellCheck={false}
+                placeholder={secretPlaceholder}
+                value={webhookSecret}
+                disabled={saving}
+                onChange={(e) => {
+                  setWebhookSecret(e.target.value);
+                  setClearSecret(false);
+                  touch("secret");
+                  setSaveError(null);
+                  // A prior (or in-flight) Test described a different secret.
+                  invalidateTest();
+                }}
+              />
+              <button
+                type="button"
+                className="btn-primary px-6 py-3"
+                disabled={saving}
+                onClick={() => {
+                  setWebhookSecret(generateWebhookSecret());
+                  setClearSecret(false);
+                  touch("secret");
+                  setSaveError(null);
+                  invalidateTest();
+                }}
+              >
+                Generate
+              </button>
+              {secretConfigured && !clearSecret && (
+                <button
+                  type="button"
+                  className="px-4 py-3 text-sm font-semibold text-on-surface-variant hover:text-error transition-colors"
+                  disabled={saving}
+                  onClick={() => {
+                    setWebhookSecret("");
+                    setClearSecret(true);
+                    touch("secret");
+                    setSaveError(null);
+                    invalidateTest();
+                  }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              When set, every delivery carries{" "}
+              <span className="font-mono">x-rootscribe-signature</span> (HMAC-SHA256) and{" "}
+              <span className="font-mono">x-rootscribe-timestamp</span>. Paste the same value
+              into your receiver so it can verify origin — it is not shown again after
+              saving, so copy it now. Test uses the value in this field.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <label
+              htmlFor="instance-id"
+              className="font-label text-xs font-semibold text-on-surface-variant uppercase tracking-wider"
+            >
+              Instance ID
+            </label>
+            <input
+              id="instance-id"
+              className="input py-3 border-transparent font-mono text-sm"
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              placeholder="generated on first run"
+              value={instanceId}
+              disabled={saving}
+              onChange={(e) => {
+                setInstanceId(e.target.value);
+                touch("instanceId");
+                setSaveError(null);
+                // Test stamps this value, so a prior result no longer applies.
+                invalidateTest();
+              }}
+            />
+            <p className="text-[11px] text-on-surface-variant leading-relaxed">
+              Sent as <span className="font-mono">x-rootscribe-instance</span> on every delivery
+              so a shared receiver can tell installs apart. Letters, digits,{" "}
+              <span className="font-mono">. _ : -</span> only.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -263,9 +489,10 @@ export function Settings(): JSX.Element {
             min={1}
             max={60}
             value={pollMinutes}
+            disabled={saving}
             onChange={(e) => {
               setPollMinutes(Number(e.target.value));
-              setDirty(true);
+              touch("poll");
               setSaveError(null);
             }}
             className="w-full accent-primary"
@@ -303,9 +530,10 @@ export function Settings(): JSX.Element {
               type="url"
               placeholder={DEFAULT_CONFIG.jiraBaseUrl}
               value={jiraBaseUrl}
+              disabled={saving}
               onChange={(e) => {
                 setJiraBaseUrl(e.target.value);
-                setDirty(true);
+                touch("jira");
                 setSaveError(null);
               }}
             />
@@ -323,10 +551,15 @@ export function Settings(): JSX.Element {
         <button
           className="w-full max-w-md btn-primary py-4 text-base font-black shadow-lg shadow-primary/10"
           onClick={() => void save()}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || !configSettled}
         >
           {saving ? "Saving…" : "Save Settings"}
         </button>
+        {cfg.isError && (
+          <p className="mt-3 text-xs text-error max-w-md text-center">
+            Could not refresh the current settings — reload the page before saving or testing.
+          </p>
+        )}
         {saveError && (
           <p className="mt-3 text-xs text-error max-w-md text-center">{saveError}</p>
         )}

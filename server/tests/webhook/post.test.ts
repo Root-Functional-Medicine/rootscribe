@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createHmac } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { RecordingRow } from "@rootscribe/shared";
@@ -15,7 +16,7 @@ const configDir = mkTempConfigDir("rootscribe-webhook-post-");
 const { fireWebhookForRecording, testWebhook } = await import(
   "../../src/webhook/post.js"
 );
-const { resetConfigCache, updateConfig } = await import(
+const { loadConfig, resetConfigCache, updateConfig } = await import(
   "../../src/config.js"
 );
 const { getDb, resetDbSingleton } = await import("../../src/db.js");
@@ -104,6 +105,32 @@ describe("fireWebhookForRecording — guard clauses", () => {
     const ok = await fireWebhookForRecording("audio_ready", makeRow());
     expect(ok).toBe(false);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("returns false for a hand-edited non-boolean enabled (only a real `true` fires)", async () => {
+    // Copilot review on PR #19 round 25. `!cfg.webhook.enabled` let any
+    // truthy non-boolean through — notably the string "false" from a
+    // hand-edited settings.json, which fired deliveries the user plainly
+    // meant to disable. redactForClient() applies the SAME `=== true` rule,
+    // so the gate and what Settings displays agree on every stored shape;
+    // tightening one alone would make the UI claim "disabled" while
+    // deliveries kept firing.
+    for (const enabled of ["false", "true", 1, {}]) {
+      updateConfig({
+        webhook: { url: "https://hook.example", enabled: enabled as unknown as boolean },
+        recordingsDir,
+      });
+      // Resolve a real 200 rather than a bare vi.fn(): if the gate ever
+      // regresses, the delivery short-circuits on the first attempt and this
+      // fails on the assertion below. A bare mock returns undefined, which
+      // sends the retry/backoff path into real timers and turns a regression
+      // into a 10s timeout instead of a readable failure.
+      const fetchMock = vi.fn().mockResolvedValue(new Response("ok", { status: 200 }));
+      vi.stubGlobal("fetch", fetchMock);
+      const ok = await fireWebhookForRecording("audio_ready", makeRow());
+      expect(ok).toBe(false);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
   });
 });
 
@@ -434,5 +461,363 @@ describe("testWebhook — single-shot (no retries)", () => {
 
     const res = await testWebhook("https://hook.example");
     expect(res.bodySnippet?.length).toBe(500);
+  });
+});
+
+// Parse `t=<sec>,v1=<hex>` into its parts. Kept strict on purpose: a receiver
+// that splits on "," then "=" is the documented recipe, so any drift in the
+// serialization shows up here first.
+function parseSignature(header: string): { t: number; v1: string } {
+  const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(header);
+  if (!match) throw new Error(`unexpected signature header shape: ${header}`);
+  return { t: Number(match[1]), v1: match[2]! };
+}
+
+function expectedSignature(secret: string, t: number, body: string): string {
+  return createHmac("sha256", secret).update(`${t}.${body}`).digest("hex");
+}
+
+describe("fireWebhookForRecording — signing + instance headers", () => {
+  const secret = "whsec_unit_test_secret";
+
+  beforeEach(() => {
+    resetConfigCache();
+    resetDbSingleton();
+    getDb();
+    getDb().prepare("DELETE FROM webhook_log").run();
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval"] });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("signed delivery: carries x-rootscribe-signature (t + v1) whose v1 verifies against the sent body with the secret", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-signed",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const before = Math.floor(Date.now() / 1000);
+    await fireWebhookForRecording("transcript_ready", makeRow());
+    const after = Math.floor(Date.now() / 1000);
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+
+    // Timestamp header mirrors the `t=` component and is "now" in seconds.
+    expect(headers["x-rootscribe-timestamp"]).toBe(String(t));
+    expect(t).toBeGreaterThanOrEqual(before);
+    expect(t).toBeLessThanOrEqual(after);
+    // v1 is the HMAC over `${t}.${exact body bytes sent}`.
+    expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+  });
+
+  it("always sends x-rootscribe-instance from config.instanceId", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-abc-123",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fireWebhookForRecording("audio_ready", makeRow());
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-abc-123");
+  });
+
+  it("no secret configured: sends the instance header and NO signature / timestamp headers", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true },
+      recordingsDir,
+      instanceId: "inst-unsigned",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fireWebhookForRecording("audio_ready", makeRow());
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-unsigned");
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+    expect(headers).not.toHaveProperty("x-rootscribe-timestamp");
+  });
+
+  it("mints and persists an instance id on the fly when settings.json has none, so the header is never missing", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true },
+      recordingsDir,
+      instanceId: null,
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fireWebhookForRecording("audio_ready", makeRow());
+    await fireWebhookForRecording("audio_ready", makeRow());
+    const first = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    const second = (fetchMock.mock.calls[1]![1] as RequestInit).headers as Record<string, string>;
+    expect(first["x-rootscribe-instance"]).toMatch(/^[0-9a-f-]{36}$/);
+    // Stable across deliveries — persisted, not re-minted per call.
+    expect(second["x-rootscribe-instance"]).toBe(first["x-rootscribe-instance"]);
+    resetConfigCache();
+    expect(loadConfig().instanceId).toBe(first["x-rootscribe-instance"]);
+  });
+
+  it("a hand-edited non-string secret in settings.json does not throw — delivery goes out unsigned", async () => {
+    // Copilot review on PR #19 round 3: loadConfig() trusts the file's
+    // shape, so `"secret": 12345` would reach createHmac(), throw, and make
+    // fireRaw retry the same broken delivery forever. A non-string is
+    // treated as "no secret" rather than taking down every webhook.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret: 12345 as unknown as string },
+      recordingsDir,
+      instanceId: "inst-badsecret",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const ok = await fireWebhookForRecording("audio_ready", makeRow());
+    expect(ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-badsecret");
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+  });
+
+  it("captures the secret once per delivery so a rotation mid-backoff does not break the retry", async () => {
+    // Copilot review on PR #19 round 4: re-reading the secret on every
+    // attempt means a 503 followed by a secret rotation in Settings would
+    // sign the retry with the NEW key, which the original receiver rejects —
+    // a transient failure becomes a permanent one. The timestamp/signature
+    // are still recomputed per attempt, just with the captured key.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-rotate",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    // Attempt 1 has fired (503) and the 5s backoff is armed. Rotate now.
+    await vi.advanceTimersByTimeAsync(0);
+    updateConfig({ webhook: { url: "https://hook.example/ingest", enabled: true, secret: "rotated" } });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    for (const call of fetchMock.mock.calls) {
+      const init = call[1] as RequestInit;
+      const { t, v1 } = parseSignature((init.headers as Record<string, string>)["x-rootscribe-signature"]!);
+      expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+    }
+  });
+
+  it("captures the instance id once per delivery so a change mid-backoff keeps every attempt's identity consistent", async () => {
+    // Copilot review on PR #19 round 23 (suppressed finding): the secret was
+    // captured once but deliveryHeaders() re-read the instance id on every
+    // attempt, so a Settings change during the 5s/30s backoff sent the SAME
+    // logical delivery under two identities — a receiver keying dedup or
+    // attribution on (instance, event) would treat the retry as a second
+    // install.
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-before",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    // Attempt 1 has fired (503) and the 5s backoff is armed. Change the id now.
+    await vi.advanceTimersByTimeAsync(0);
+    updateConfig({ instanceId: "inst-after" });
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    const ids = fetchMock.mock.calls.map(
+      (call) => ((call[1] as RequestInit).headers as Record<string, string>)["x-rootscribe-instance"],
+    );
+    expect(ids).toEqual(["inst-before", "inst-before"]);
+  });
+
+  it("each retry attempt carries a FRESH timestamp and signature (headers are not computed once before the loop)", async () => {
+    // Copilot review on PR #19 round 19 (suppressed finding): with Date
+    // real and only timers faked, every attempt could share one second and
+    // a headers-computed-once regression would still pass. Fake Date too
+    // so the 5s / 30s backoff is visible in `t`.
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "Date"] });
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-fresh",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBe(true);
+
+    const stamps = fetchMock.mock.calls.map((call) => {
+      const init = call[1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+      expect(headers["x-rootscribe-timestamp"]).toBe(String(t));
+      expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+      return { t, v1 };
+    });
+    expect(stamps).toHaveLength(3);
+    expect(stamps[1]!.t - stamps[0]!.t).toBe(5);
+    expect(stamps[2]!.t - stamps[1]!.t).toBe(30);
+    expect(new Set(stamps.map((s) => s.v1)).size).toBe(3);
+  });
+
+  it("re-signs every retry attempt so a delivery after backoff still verifies", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example/ingest", enabled: true, secret },
+      recordingsDir,
+      instanceId: "inst-retry",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValueOnce(new Response("busy", { status: 503 }))
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const pending = fireWebhookForRecording("audio_ready", makeRow());
+    await vi.advanceTimersByTimeAsync(5_000);
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(await pending).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    for (const call of fetchMock.mock.calls) {
+      const init = call[1] as RequestInit;
+      const headers = init.headers as Record<string, string>;
+      const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+      expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+    }
+  });
+});
+
+describe("testWebhook — signing + instance headers", () => {
+  const secret = "whsec_test_delivery";
+
+  beforeEach(() => {
+    resetConfigCache();
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("is signed the same way as a real delivery when a secret is configured", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-test-delivery",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+    expect(headers["x-rootscribe-timestamp"]).toBe(String(t));
+    expect(v1).toBe(expectedSignature(secret, t, String(init.body)));
+    expect(headers["x-rootscribe-instance"]).toBe("inst-test-delivery");
+    // The existing test marker is still there alongside the signature.
+    expect(headers["x-rootscribe-test"]).toBe("1");
+  });
+
+  it("without a secret: instance header only, no signature", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-test-unsigned",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-test-unsigned");
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+    expect(headers).not.toHaveProperty("x-rootscribe-timestamp");
+  });
+
+  // Copilot review on PR #19: the Settings/wizard secret lives in form state
+  // until Save, so a Test click must be able to sign with the DRAFT value —
+  // otherwise it silently uses the old (or no) secret and "succeeds" against
+  // a receiver that could never verify the value the user is about to save.
+  it("signs with an explicitly supplied draft secret instead of the persisted one", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret: "persisted-secret" },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-draft",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", "draft-secret");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = init.headers as Record<string, string>;
+    const { t, v1 } = parseSignature(headers["x-rootscribe-signature"]!);
+    expect(v1).toBe(expectedSignature("draft-secret", t, String(init.body)));
+    expect(v1).not.toBe(expectedSignature("persisted-secret", t, String(init.body)));
+  });
+
+  it("stamps a caller-supplied draft instance id so Test matches what Save will send", async () => {
+    // Copilot review on PR #19 round 9: Settings lets the user edit the
+    // instance id, but Test used the persisted one — a passing test could
+    // describe different headers than the saved configuration.
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-persisted",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", undefined, "inst-draft");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers["x-rootscribe-instance"]).toBe("inst-draft");
+    // The persisted value is untouched — this is a per-request override.
+    expect(loadConfig().instanceId).toBe("inst-persisted");
+  });
+
+  it("an explicitly empty draft secret sends an unsigned test even when one is persisted", async () => {
+    updateConfig({
+      webhook: { url: "https://hook.example", enabled: true, secret: "persisted-secret" },
+      recordingsDir,
+      bind: { host: "127.0.0.1", port: 44471 },
+      instanceId: "inst-cleared",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await testWebhook("https://hook.example", "");
+    const headers = (fetchMock.mock.calls[0]![1] as RequestInit).headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("x-rootscribe-signature");
+    expect(headers["x-rootscribe-instance"]).toBe("inst-cleared");
   });
 });

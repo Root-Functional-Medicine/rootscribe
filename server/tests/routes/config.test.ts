@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import request from "supertest";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import type { AppConfig } from "@rootscribe/shared";
 import { cleanupTempDir, mkTempConfigDir, startTestServer } from "../helpers/test-server.js";
 
 // The testWebhook + poller imports inside routes/config.ts reach into
@@ -133,7 +134,7 @@ describe("POST /api/config (validation)", () => {
     );
   });
 
-  it("accepts a webhook object with url + enabled + secret", async () => {
+  it("accepts a webhook object with url + enabled + secret and persists the secret", async () => {
     const res = await request(app)
       .post("/api/config")
       .send({
@@ -148,8 +149,170 @@ describe("POST /api/config (validation)", () => {
     expect(res.body.config.webhook).toMatchObject({
       url: "https://hook.example.com/in",
       enabled: true,
-      secret: "s3cret",
     });
+    expect(loadConfig().webhook?.secret).toBe("s3cret");
+  });
+
+  // Copilot review on PR #19: /api/config has no auth and Docker binds
+  // 0.0.0.0, so the signing key must never ride in a response — a LAN
+  // client could otherwise forge HMAC-valid deliveries. Only a boolean
+  // "is one configured" is exposed, mirroring the token redaction.
+  it("never returns webhook.secret on POST or GET — only secretConfigured", async () => {
+    const post = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "s3cret" } });
+    expect(post.body.config.webhook).not.toHaveProperty("secret");
+    expect(post.body.config.webhook.secretConfigured).toBe(true);
+
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+    expect(get.body.config.webhook.secretConfigured).toBe(true);
+    expect(JSON.stringify(get.body)).not.toContain("s3cret");
+  });
+
+  it("reports secretConfigured=false when a webhook has no secret", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "" } });
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook.secretConfigured).toBe(false);
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+  });
+
+  it("reports enabled=false for a hand-edited non-boolean enabled (only a real `true` is enabled)", async () => {
+    // Copilot review on PR #19 round 25: `Boolean(enabled)` reported any
+    // truthy non-boolean as enabled — the string "false" being the case a
+    // user would be most surprised by. The delivery gate
+    // (fireWebhookForRecording) applies the same `=== true` rule, so what
+    // Settings shows and what actually fires never disagree.
+    for (const enabled of ["false", "true", 1, {}]) {
+      updateConfig({
+        webhook: {
+          url: "https://hook.example.com/in",
+          enabled,
+        } as unknown as AppConfig["webhook"],
+      });
+      const get = await request(app).get("/api/config");
+      expect(get.status).toBe(200);
+      expect(get.body.config.webhook.enabled).toBe(false);
+    }
+  });
+
+  it("returns webhook=null (never rest-spreads) when the stored webhook is not a plain object", async () => {
+    // Copilot review on PR #19 round 7: a hand-edited string or array here
+    // would be spread character-by-character / element-by-element into the
+    // response — an array of objects could even leak nested `secret`s.
+    for (const bad of [
+      "https://hook.example.com/in",
+      [{ url: "https://hook.example.com/in", secret: "leak-me" }],
+      42,
+    ]) {
+      updateConfig({ webhook: bad as unknown as AppConfig["webhook"] });
+      const get = await request(app).get("/api/config");
+      expect(get.status).toBe(200);
+      expect(get.body.config.webhook).toBeNull();
+      expect(JSON.stringify(get.body)).not.toContain("leak-me");
+    }
+  });
+
+  it("returns webhook=null when the stored webhook object has a non-string url (never a malformed shape)", async () => {
+    // Copilot review on PR #19 round 17 (suppressed finding): `{ url: 123 }`
+    // from a hand-edited file reached the UI, whose hydration then called
+    // url.trim() and threw instead of letting the user repair the config.
+    updateConfig({ webhook: { url: 123, enabled: true } as unknown as AppConfig["webhook"] });
+    const get = await request(app).get("/api/config");
+    expect(get.status).toBe(200);
+    expect(get.body.config.webhook).toBeNull();
+  });
+
+  it("reports secretConfigured=false for a hand-edited non-string secret (matches the unsigned delivery path)", async () => {
+    // Copilot review on PR #19 round 5: the delivery path sends unsigned for
+    // a non-string secret, so Settings must not claim one is configured.
+    updateConfig({
+      webhook: { url: "https://hook.example.com/in", enabled: true, secret: 12345 as unknown as string },
+    });
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.webhook.secretConfigured).toBe(false);
+    expect(get.body.config.webhook).not.toHaveProperty("secret");
+  });
+
+  it("keeps the stored secret when a POST omits webhook.secret (unrelated edits must not wipe it)", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "keep-me" } });
+
+    const res = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/changed" } });
+
+    expect(res.status).toBe(200);
+    expect(loadConfig().webhook).toMatchObject({
+      url: "https://hook.example.com/changed",
+      enabled: true,
+      secret: "keep-me",
+    });
+    expect(res.body.config.webhook.secretConfigured).toBe(true);
+  });
+
+  it("clears the stored secret when a POST sends webhook.secret as an empty string", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+
+    const res = await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "" } });
+
+    expect(res.status).toBe(200);
+    expect(loadConfig().webhook?.secret).toBeUndefined();
+    expect(res.body.config.webhook.secretConfigured).toBe(false);
+  });
+
+  it("replaces the stored secret when a POST sends a new non-empty webhook.secret", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "new" } });
+    expect(loadConfig().webhook?.secret).toBe("new");
+  });
+
+  // Copilot review on PR #19 round 2: the normalizer always set `webhook`,
+  // so a partial patch that omitted it (JiraStep saves only jiraBaseUrl
+  // right after WebhookStep) spread `webhook: undefined` over the stored
+  // object and silently wiped the URL + freshly saved secret.
+  it("preserves the stored webhook (including its secret) when a patch omits webhook entirely", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "keep-me" } });
+
+    const jira = await request(app)
+      .post("/api/config")
+      .send({ jiraBaseUrl: "https://example.atlassian.net/browse/" });
+    expect(jira.status).toBe(200);
+    expect(jira.body.config.webhook).toMatchObject({
+      url: "https://hook.example.com/in",
+      enabled: true,
+      secretConfigured: true,
+    });
+
+    const poll = await request(app).post("/api/config").send({ pollIntervalMinutes: 7 });
+    expect(poll.status).toBe(200);
+
+    expect(loadConfig().webhook).toEqual({
+      url: "https://hook.example.com/in",
+      enabled: true,
+      secret: "keep-me",
+    });
+  });
+
+  it("drops the secret entirely when the webhook is cleared to null", async () => {
+    await request(app)
+      .post("/api/config")
+      .send({ webhook: { url: "https://hook.example.com/in", secret: "old" } });
+    await request(app).post("/api/config").send({ webhook: null });
+    expect(loadConfig().webhook).toBeNull();
   });
 
   it("defaults webhook.enabled=true when url is non-empty and enabled is omitted", async () => {
@@ -177,6 +340,45 @@ describe("POST /api/config (validation)", () => {
     expect(res.status).toBe(200);
     expect(res.body.config.webhook).toBeNull();
   });
+
+  it("persists a trimmed instanceId and echoes it back (also visible on GET)", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "  allen-macbook.local  " });
+
+    expect(res.status).toBe(200);
+    expect(res.body.config.instanceId).toBe("allen-macbook.local");
+    expect(loadConfig().instanceId).toBe("allen-macbook.local");
+
+    const get = await request(app).get("/api/config");
+    expect(get.body.config.instanceId).toBe("allen-macbook.local");
+  });
+
+  it("rejects an empty / whitespace-only instanceId", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "   " });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBeDefined();
+  });
+
+  it("rejects an instanceId containing characters that are not safe in a header value", async () => {
+    // Spaces, CR/LF and other control characters make undici's fetch throw
+    // on the outbound request, which would silently break EVERY delivery.
+    for (const bad of ["two words", "line\nbreak", "tab\there", "émoji-🚀"]) {
+      const res = await request(app).post("/api/config").send({ instanceId: bad });
+      expect(res.status, `expected 400 for ${JSON.stringify(bad)}`).toBe(400);
+    }
+  });
+
+  it("rejects an instanceId longer than 128 characters", async () => {
+    const res = await request(app)
+      .post("/api/config")
+      .send({ instanceId: "a".repeat(129) });
+
+    expect(res.status).toBe(400);
+  });
 });
 
 describe("POST /api/config/test-webhook", () => {
@@ -203,18 +405,90 @@ describe("POST /api/config/test-webhook", () => {
       bodySnippet: "pong",
       durationMs: 42,
     });
+    // No draft secret in the body → undefined, so testWebhook falls back to
+    // the persisted secret.
     expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
       "https://hook.example/v1/ingest",
+      undefined,
+      undefined,
     );
   });
 
-  it("returns 400 when the URL is not a valid URL", async () => {
+  it("forwards a draft secret from the body so the UI can test an unsaved value", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "draft-secret" });
+
+    expect(res.status).toBe(200);
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "draft-secret",
+      undefined,
+    );
+  });
+
+  it("forwards a draft instanceId so Test stamps the value about to be saved", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "s", instanceId: "  inst-draft  " });
+
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "s",
+      "inst-draft",
+    );
+  });
+
+  it("rejects a draft instanceId that is not header-safe, naming the field", async () => {
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", instanceId: "two words" });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/instanceId/);
+    expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
+  });
+
+  it("forwards an explicitly empty secret (test unsigned) distinct from an omitted one", async () => {
+    vi.mocked(testWebhook).mockResolvedValue({ ok: true, statusCode: 200, durationMs: 1 });
+
+    await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: "" });
+
+    expect(vi.mocked(testWebhook)).toHaveBeenCalledWith(
+      "https://hook.example/v1/ingest",
+      "",
+      undefined,
+    );
+  });
+
+  it("returns 400 naming the url field when the URL is not a valid URL", async () => {
     const res = await request(app)
       .post("/api/config/test-webhook")
       .send({ url: "not-a-url" });
 
     expect(res.status).toBe(400);
     expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/url/i);
+    expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
+  });
+
+  it("returns 400 naming the secret field (not 'invalid URL') when secret is not a string", async () => {
+    // Copilot review on PR #19 round 3: with `secret` in the schema, a
+    // bad secret used to be reported as "invalid URL".
+    const res = await request(app)
+      .post("/api/config/test-webhook")
+      .send({ url: "https://hook.example/v1/ingest", secret: 42 });
+
+    expect(res.status).toBe(400);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toMatch(/secret/i);
+    expect(res.body.error).not.toMatch(/url/i);
     expect(vi.mocked(testWebhook)).not.toHaveBeenCalled();
   });
 

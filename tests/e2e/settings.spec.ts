@@ -1,8 +1,10 @@
 import { test, expect } from "@playwright/test";
 
 // Journey: Settings page — poll interval update, webhook URL update, Jira
-// base URL update. The seeded config has pollIntervalMinutes=10, empty
-// webhook, and jiraBaseUrl=https://example.atlassian.net/browse/.
+// base URL update, webhook signing secret + instance id. The seeded config
+// has pollIntervalMinutes=10, empty webhook,
+// jiraBaseUrl=https://example.atlassian.net/browse/, and
+// instanceId=e2e-seed-instance.
 
 test.beforeEach(async ({ request }) => {
   // Assert the reset actually succeeded — a 404 here means /api/_test/* is
@@ -69,5 +71,63 @@ test.describe("Settings page", () => {
     // Save button does NOT become disabled because the form is still dirty
     // (save failed).
     await expect(page.locator("text=/failed|invalid|url/i").first()).toBeVisible();
+  });
+
+  test("renders the seeded instance id in the Webhook section", async ({ page }) => {
+    await page.goto("/settings");
+    await expect(page.getByLabel(/instance id/i)).toHaveValue("e2e-seed-instance");
+  });
+
+  test("saving a generated signing secret and an edited instance id persists both (secret never echoed back)", async ({
+    page,
+    request,
+  }) => {
+    await page.goto("/settings");
+
+    // The secret only rides inside the webhook object, so a URL is required
+    // for it to be persisted at all.
+    await page.getByPlaceholder(/yourdomain\.com/i).fill("https://hook.example/ingest");
+
+    await page.getByRole("button", { name: /generate/i }).click();
+    const secretInput = page.getByLabel(/signing secret/i);
+    await expect(secretInput).toHaveValue(/^[0-9a-f]{64}$/);
+
+    const instanceInput = page.getByLabel(/instance id/i);
+    await instanceInput.fill("e2e-edited-instance");
+
+    await page.getByRole("button", { name: /save settings/i }).click();
+    await expect(page.getByRole("button", { name: /save settings/i })).toBeDisabled();
+
+    // After reload the instance id is read back; the secret is NOT (the API
+    // redacts it) — the field is empty and reports the configured state.
+    await page.reload();
+    await expect(page.getByLabel(/instance id/i)).toHaveValue("e2e-edited-instance");
+    await expect(page.getByLabel(/signing secret/i)).toHaveValue("");
+    await expect(page.getByLabel(/signing secret/i)).toHaveAttribute("placeholder", /configured/i);
+    await expect(page.getByRole("button", { name: /^clear$/i })).toBeVisible();
+
+    // GET /api/config is a straight read of settings.json through
+    // loadConfig(): instance id stored, secret stored but never returned.
+    const cfg = (await (await request.get("/api/config")).json()) as {
+      config: {
+        webhook: { url: string; secret?: string; secretConfigured?: boolean } | null;
+        instanceId: string | null;
+      };
+    };
+    expect(cfg.config.webhook?.url).toBe("https://hook.example/ingest");
+    expect(cfg.config.webhook?.secretConfigured).toBe(true);
+    expect(cfg.config.webhook).not.toHaveProperty("secret");
+    expect(cfg.config.instanceId).toBe("e2e-edited-instance");
+
+    // An unrelated save with the secret field untouched keeps the stored
+    // secret (tri-state: omitted = keep).
+    await page.getByLabel(/instance id/i).fill("e2e-edited-again");
+    await page.getByRole("button", { name: /save settings/i }).click();
+    await expect(page.getByRole("button", { name: /save settings/i })).toBeDisabled();
+    const after = (await (await request.get("/api/config")).json()) as {
+      config: { webhook: { secretConfigured?: boolean } | null; instanceId: string | null };
+    };
+    expect(after.config.webhook?.secretConfigured).toBe(true);
+    expect(after.config.instanceId).toBe("e2e-edited-again");
   });
 });

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -60,6 +60,208 @@ describe("loadConfig — malformed settings.json", () => {
     // from a malformed file, so token:null also proves we took the fallback.
     expect(cfg.setupComplete).toBe(false);
     expect(cfg.token).toBeNull();
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — first-run UUID generation", () => {
+  it("mints a UUID, persists it to settings.json, and returns it when none is configured", async () => {
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const id = ensureInstanceId();
+
+    // RFC 4122 v4 shape — what node:crypto randomUUID() produces.
+    expect(id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
+    // Persisted: a fresh read of settings.json (cache dropped) sees it.
+    resetConfigCache();
+    expect(loadConfig().instanceId).toBe(id);
+    resetConfigCache();
+  });
+
+  it("is idempotent — a second call returns the same id without re-minting", async () => {
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const first = ensureInstanceId();
+    const second = ensureInstanceId();
+    expect(second).toBe(first);
+    resetConfigCache();
+  });
+
+  it("returns the operator-chosen id untouched when settings.json already has one", async () => {
+    writeFileSync(
+      path.join(tmpDir, "settings.json"),
+      JSON.stringify({ instanceId: "allen-macbook" }),
+    );
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toBe("allen-macbook");
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — malformed settings.json is never overwritten", () => {
+  it("returns a process-stable id but leaves the unparseable file untouched (no data loss on repair)", async () => {
+    // Copilot review on PR #19: loadConfig()'s catch branch returns
+    // DEFAULT_CONFIG, so an unconditional persist at startup would clobber a
+    // corrupt-but-recoverable settings.json (token, webhook, ...) with
+    // defaults + a UUID. The id must still be minted (the header is
+    // mandatory) but only in memory.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    const malformed = '{"token": "recoverable-by-hand", "webhook": {';
+    writeFileSync(settingsFile, malformed);
+
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const first = ensureInstanceId();
+    expect(first).toMatch(/^[0-9a-f-]{36}$/);
+    // Stable for the lifetime of the process (deliveries keep one id)...
+    expect(ensureInstanceId()).toBe(first);
+    expect(loadConfig().instanceId).toBe(first);
+    // ...but the corrupt file was NOT rewritten.
+    expect(readFileSync(settingsFile, "utf8")).toBe(malformed);
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — persisted value is validated like the API input", () => {
+  it("re-mints and persists a safe id when settings.json holds a header-unsafe value", async () => {
+    // Copilot review on PR #19 round 2: a hand-edited settings.json with a
+    // control character would be stamped verbatim into x-rootscribe-instance,
+    // where undici rejects it and every delivery fails. The persisted value
+    // must pass the same [A-Za-z0-9._:-]{1,128} rule POST /api/config enforces.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, JSON.stringify({ instanceId: "bad\nid" }));
+
+    const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    const id = ensureInstanceId();
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    resetConfigCache();
+    expect(loadConfig().instanceId).toBe(id);
+    resetConfigCache();
+  });
+
+  it("re-mints when the persisted value is over 128 characters or empty", async () => {
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    for (const bad of ["a".repeat(129), "", "two words"]) {
+      writeFileSync(path.join(tmpDir, "settings.json"), JSON.stringify({ instanceId: bad }));
+      resetConfigCache();
+      expect(ensureInstanceId(), `expected re-mint for ${JSON.stringify(bad)}`).toMatch(
+        /^[0-9a-f-]{36}$/,
+      );
+    }
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — persistence failure must not become an outage", () => {
+  // chmod-based read-only files are bypassed by root; GitHub-hosted runners
+  // and developer machines are non-root, which is where this matters.
+  const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+
+  it.skipIf(isRoot)("falls back to an in-memory id (no throw) when settings.json cannot be written, leaving the file intact", async () => {
+    // Copilot review on PR #19 rounds 5 + 9: saveConfig() throwing (full
+    // disk, unwritable directory) would surface in main() before listen()
+    // and, on the delivery path, inside fireRaw's try before fetch. And
+    // because the write is temp-file + rename, a failure must leave the
+    // ORIGINAL file byte-for-byte intact rather than truncated. The
+    // directory (not the file) is made unwritable: rename over a read-only
+    // file succeeds on POSIX, so a read-only file would not exercise this.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    const original = JSON.stringify({ token: "t" });
+    writeFileSync(settingsFile, original);
+    chmodSync(tmpDir, 0o500);
+
+    try {
+      const { ensureInstanceId, loadConfig, resetConfigCache } = await import("./config.js");
+      resetConfigCache();
+
+      let id = "";
+      expect(() => {
+        id = ensureInstanceId();
+      }).not.toThrow();
+      expect(id).toMatch(/^[0-9a-f-]{36}$/);
+      // Stable for the process even though it could not be persisted...
+      expect(ensureInstanceId()).toBe(id);
+      expect(loadConfig().instanceId).toBe(id);
+      // ...and the file is exactly as it was — not truncated, no temp left.
+      expect(readFileSync(settingsFile, "utf8")).toBe(original);
+      expect(readdirSync(tmpDir).filter((f) => f.startsWith("settings.json"))).toEqual(["settings.json"]);
+      resetConfigCache();
+    } finally {
+      chmodSync(tmpDir, 0o700);
+    }
+  });
+});
+
+describe("saveConfig — atomic write", () => {
+  it("replaces settings.json via a temp file + rename and leaves no temp file behind", async () => {
+    // Copilot review on PR #19 round 9: writeFileSync on the target
+    // truncates first, so an interrupted automatic write (ensureInstanceId
+    // at startup) could leave a half-written or empty file. Temp + rename
+    // makes the replacement all-or-nothing.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, JSON.stringify({ token: "before" }));
+    const { loadConfig, resetConfigCache, saveConfig } = await import("./config.js");
+    resetConfigCache();
+
+    saveConfig({ ...loadConfig(), token: "after" });
+
+    expect(JSON.parse(readFileSync(settingsFile, "utf8")).token).toBe("after");
+    expect(readdirSync(tmpDir).filter((f) => f.includes("settings"))).toEqual(["settings.json"]);
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — settings.json that parses but is not a plain object", () => {
+  it.each([
+    ["null", "null"],
+    ["an array", "[1, 2]"],
+    ["a string", JSON.stringify("just-a-string")],
+    ["a number", "42"],
+  ])("treats %s as a failed load: mints in memory, never rewrites the file", async (_label, content) => {
+    // Copilot review on PR #19 round 7: `{ ...DEFAULT_CONFIG, ...parsed }`
+    // accepts any JSON value, so a semantically corrupt file slipped past
+    // the malformed-file guard and got overwritten with defaults + a UUID.
+    const settingsFile = path.join(tmpDir, "settings.json");
+    writeFileSync(settingsFile, content);
+
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toMatch(/^[0-9a-f-]{36}$/);
+    expect(readFileSync(settingsFile, "utf8")).toBe(content);
+    resetConfigCache();
+  });
+});
+
+describe("ensureInstanceId — rejected persisted values are never logged verbatim", () => {
+  it("logs only the value's type when replacing a hand-edited object instanceId (no nested contents in the log)", async () => {
+    // Copilot review on PR #19 round 8: passing the raw value to Pino would
+    // serialize an object/array — and anything nested in it — into
+    // rootscribe.log while rejecting it.
+    writeFileSync(
+      path.join(tmpDir, "settings.json"),
+      JSON.stringify({ instanceId: { nested: "do-not-log-me", token: "cred-xyz" } }),
+    );
+    const { logger } = await import("./logger.js");
+    vi.mocked(logger.warn).mockClear();
+    const { ensureInstanceId, resetConfigCache } = await import("./config.js");
+    resetConfigCache();
+
+    expect(ensureInstanceId()).toMatch(/^[0-9a-f-]{36}$/);
+
+    const logged = JSON.stringify(vi.mocked(logger.warn).mock.calls);
+    expect(logged).not.toContain("do-not-log-me");
+    expect(logged).not.toContain("cred-xyz");
+    expect(logged).toMatch(/object/);
     resetConfigCache();
   });
 });
